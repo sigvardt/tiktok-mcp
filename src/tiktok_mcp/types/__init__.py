@@ -1,4 +1,45 @@
-"""Typed model packages for TikTok API integrations."""
+"""Public typed models and errors for TikTok API integrations."""
 
-# populated in Task 3 (pydantic v2 models for OAuth, accounts, app creds, errors)
 from __future__ import annotations
+
+from .accounts import Account, AccountStatus, AccountSummary, ApiType
+from .app_credentials import AppCredentialsSummary, AppCredentialsVerifyResult
+from .errors import (
+    AccountBrokenError,
+    AccountNotFoundError,
+    AppCredentialsNotSetError,
+    BusinessApiError,
+    DisplayApiError,
+    KeychainLockedError,
+    KeychainUnavailableError,
+    OAuthHostMismatchError,
+    OAuthStateInvalidError,
+    RateLimitedError,
+    TikTokMCPError,
+    WritesDisabledError,
+)
+from .oauth import OAuthAuthorizationUrl, OAuthInProgress, OAuthTokenResponse
+
+__all__ = [
+    "Account",
+    "AccountBrokenError",
+    "AccountNotFoundError",
+    "AccountStatus",
+    "AccountSummary",
+    "ApiType",
+    "AppCredentialsNotSetError",
+    "AppCredentialsSummary",
+    "AppCredentialsVerifyResult",
+    "BusinessApiError",
+    "DisplayApiError",
+    "KeychainLockedError",
+    "KeychainUnavailableError",
+    "OAuthAuthorizationUrl",
+    "OAuthHostMismatchError",
+    "OAuthInProgress",
+    "OAuthStateInvalidError",
+    "OAuthTokenResponse",
+    "RateLimitedError",
+    "TikTokMCPError",
+    "WritesDisabledError",
+]
