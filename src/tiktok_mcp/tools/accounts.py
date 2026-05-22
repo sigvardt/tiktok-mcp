@@ -81,9 +81,13 @@ class LoadedAppCredentials:
 
 @app.tool(annotations=ToolAnnotations(destructiveHint=True))
 @require_account_changes_enabled
-async def add_account(api_type: ApiType, alias: str | None = None) -> dict[str, Any]:
+async def add_account(
+    api_type: ApiType,
+    alias: str | None = None,
+    sandbox: bool = False,
+) -> dict[str, Any]:
     backend = await get_backend()
-    loaded_credentials = await _load_app_credentials(backend, api_type, sandbox=False)
+    loaded_credentials = await _load_app_credentials(backend, api_type, sandbox=sandbox)
     if loaded_credentials is None:
         return _app_credentials_not_set(api_type)
 
@@ -92,7 +96,12 @@ async def add_account(api_type: ApiType, alias: str | None = None) -> dict[str, 
         return _invalid_alias_error(suggested_alias)
 
     pkce_verifier = secrets.token_urlsafe(64) if api_type in PKCE_APIS else None
-    oauth_state = await state.create_state(api_type, suggested_alias, pkce_verifier=pkce_verifier)
+    oauth_state = await state.create_state(
+        api_type,
+        suggested_alias,
+        sandbox=sandbox,
+        pkce_verifier=pkce_verifier,
+    )
     url = _build_authorization_url(loaded_credentials, oauth_state.state, pkce_verifier)
     return {
         "url": url,
@@ -116,7 +125,7 @@ async def complete_account_login(
         loaded_credentials = await _load_app_credentials(
             backend,
             oauth_state.api_type,
-            sandbox=False,
+            sandbox=oauth_state.sandbox,
         )
         if loaded_credentials is None:
             return _app_credentials_not_set(oauth_state.api_type)
@@ -134,15 +143,19 @@ async def complete_account_login(
         alias = alias_override or oauth_state.suggested_alias
         if not _valid_alias(alias):
             return _invalid_alias_error(alias)
-        if await _alias_exists(backend, alias):
+        if await _alias_exists(backend, alias, sandbox=oauth_state.sandbox):
             return {
                 "error": "alias_taken",
-                "suggested": await _next_available_alias(backend, alias),
+                "suggested": await _next_available_alias(
+                    backend,
+                    alias,
+                    sandbox=oauth_state.sandbox,
+                ),
             }
 
         account, tokens = _account_record_from_token_payload(
             loaded_credentials.credentials.api_type,
-            loaded_credentials.credentials.sandbox,
+            oauth_state.sandbox,
             alias,
             payload,
             access_value,
@@ -187,18 +200,22 @@ async def list_accounts() -> dict[str, Any]:
 
 @app.tool(annotations=ToolAnnotations(destructiveHint=True))
 @require_account_changes_enabled
-async def rename_account(old_alias: str, new_alias: str) -> dict[str, Any]:
+async def rename_account(
+    old_alias: str,
+    new_alias: str,
+    sandbox: bool = False,
+) -> dict[str, Any]:
     if not _valid_alias(new_alias):
         return _invalid_alias_error(new_alias)
 
     backend = await get_backend()
-    old_key = await _find_account_key_by_alias(backend, old_alias)
+    old_key = await _find_account_key_by_alias(backend, old_alias, sandbox=sandbox)
     if old_key is None:
         return {"error": "account_not_found"}
-    if await _alias_exists(backend, new_alias):
+    if await _alias_exists(backend, new_alias, sandbox=sandbox):
         return {
             "error": "alias_taken",
-            "suggested": await _next_available_alias(backend, new_alias),
+            "suggested": await _next_available_alias(backend, new_alias, sandbox=sandbox),
         }
 
     if isinstance(backend, KeyringBackend | EncryptedFileBackend):
@@ -226,18 +243,23 @@ async def rename_account(old_alias: str, new_alias: str) -> dict[str, Any]:
 
 @app.tool(annotations=ToolAnnotations(destructiveHint=True))
 @require_account_changes_enabled
-async def remove_account(alias: str, confirmation_token: str | None = None) -> dict[str, Any]:
+async def remove_account(
+    alias: str,
+    sandbox: bool = False,
+    confirmation_token: str | None = None,
+) -> dict[str, Any]:
     backend = await get_backend()
-    account_key_for_alias = await _find_account_key_by_alias(backend, alias)
+    account_key_for_alias = await _find_account_key_by_alias(backend, alias, sandbox=sandbox)
     if account_key_for_alias is None:
         return {"error": "account_not_found"}
 
     now = datetime.now(UTC)
+    pending_key = _pending_removal_key(alias, sandbox)
     async with _PENDING_LOCK:
         _drop_expired_pending(now)
         if confirmation_token is None:
-            token, expires_at = _pending_or_new(alias, now)
-            _PENDING_REMOVALS[alias] = (token, expires_at)
+            token, expires_at = _pending_or_new(pending_key, now)
+            _PENDING_REMOVALS[pending_key] = (token, expires_at)
             _evict_pending_removals()
             return {
                 "pending_removal": True,
@@ -249,23 +271,23 @@ async def remove_account(alias: str, confirmation_token: str | None = None) -> d
                 ),
             }
 
-        pending_removal = _PENDING_REMOVALS.get(alias)
+        pending_removal = _PENDING_REMOVALS.get(pending_key)
         if pending_removal is None or pending_removal[1] < now:
-            _ = _PENDING_REMOVALS.pop(alias, None)
+            _ = _PENDING_REMOVALS.pop(pending_key, None)
             return {"error": "confirmation_expired_or_missing"}
         if not secrets.compare_digest(pending_removal[0], confirmation_token):
             return {"error": "confirmation_token_mismatch"}
 
         raw_record = await backend.get(account_key_for_alias)
         if raw_record is None:
-            _ = _PENDING_REMOVALS.pop(alias, None)
+            _ = _PENDING_REMOVALS.pop(pending_key, None)
             return {"error": "account_not_found"}
         _account, tokens = deserialize_account_record(raw_record)
         unregister_token(tokens.access_token.get_secret_value())
         if tokens.refresh_token is not None:
             unregister_token(tokens.refresh_token.get_secret_value())
         await backend.delete(account_key_for_alias)
-        _ = _PENDING_REMOVALS.pop(alias, None)
+        _ = _PENDING_REMOVALS.pop(pending_key, None)
         return {"removed": True, "alias": alias, "removed_at": datetime.now(UTC).isoformat()}
 
 
@@ -535,23 +557,45 @@ async def _account_keys(backend: KeychainBackend) -> list[str]:
     return [key for key in keys if ACCOUNT_KEY_RE.fullmatch(key)]
 
 
-async def _find_account_key_by_alias(backend: KeychainBackend, alias: str) -> str | None:
+async def _find_account_key_by_alias(
+    backend: KeychainBackend,
+    alias: str,
+    *,
+    sandbox: bool | None = None,
+) -> str | None:
     for key in await _account_keys(backend):
         match = ACCOUNT_KEY_RE.fullmatch(key)
-        if match is not None and match.group("alias") == alias:
-            return key
+        if match is None or match.group("alias") != alias:
+            continue
+        if sandbox is not None and match.group("mode") != _mode_for_sandbox(sandbox):
+            continue
+        return key
     return None
 
 
-async def _alias_exists(backend: KeychainBackend, alias: str) -> bool:
-    return await _find_account_key_by_alias(backend, alias) is not None
+async def _alias_exists(
+    backend: KeychainBackend,
+    alias: str,
+    *,
+    sandbox: bool | None = None,
+) -> bool:
+    return await _find_account_key_by_alias(backend, alias, sandbox=sandbox) is not None
 
 
-async def _next_available_alias(backend: KeychainBackend, alias: str) -> str:
+async def _next_available_alias(
+    backend: KeychainBackend,
+    alias: str,
+    *,
+    sandbox: bool | None = None,
+) -> str:
     suffix = 1
-    while await _alias_exists(backend, f"{alias}-{suffix}"):
+    while await _alias_exists(backend, f"{alias}-{suffix}", sandbox=sandbox):
         suffix += 1
     return f"{alias}-{suffix}"
+
+
+def _mode_for_sandbox(sandbox: bool) -> str:
+    return "sandbox" if sandbox else "production"
 
 
 def _summary_dict(account: Account) -> dict[str, Any]:
@@ -595,11 +639,15 @@ def _build_pkce_challenge(code_verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
-def _pending_or_new(alias: str, now: datetime) -> tuple[str, datetime]:
-    pending = _PENDING_REMOVALS.get(alias)
+def _pending_or_new(pending_key: str, now: datetime) -> tuple[str, datetime]:
+    pending = _PENDING_REMOVALS.get(pending_key)
     if pending is not None and pending[1] >= now:
         return pending
     return secrets.token_urlsafe(16), now + timedelta(seconds=_REMOVAL_TTL_SECONDS)
+
+
+def _pending_removal_key(alias: str, sandbox: bool) -> str:
+    return f"{_mode_for_sandbox(sandbox)}::{alias}"
 
 
 def _drop_expired_pending(now: datetime) -> None:

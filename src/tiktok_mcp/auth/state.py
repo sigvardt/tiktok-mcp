@@ -19,6 +19,8 @@ async def create_state(
     api_type: ApiType,
     suggested_alias: str,
     pkce_verifier: str | None = None,
+    *,
+    sandbox: bool = False,
 ) -> OAuthInProgress:
     async with _LOCK:
         state = secrets.token_urlsafe(32)
@@ -26,6 +28,7 @@ async def create_state(
         oauth_state = OAuthInProgress(
             state=state,
             api_type=api_type,
+            sandbox=sandbox,
             pkce_verifier=pkce_verifier,
             suggested_alias=suggested_alias,
             expires_at=expires_at,

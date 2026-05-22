@@ -40,9 +40,19 @@ async def test_create_then_consume_returns_same_oauth_in_progress() -> None:
 
     assert consumed_state.state == oauth_state.state
     assert consumed_state.api_type == ApiType.DISPLAY
+    assert consumed_state.sandbox is False
     assert consumed_state.pkce_verifier == "verifier-123"
     assert consumed_state.suggested_alias == "no-display-abcd"
     assert await get_state_count() == 0
+
+
+@pytest.mark.asyncio
+async def test_create_then_consume_round_trips_sandbox() -> None:
+    oauth_state = await create_state(ApiType.DISPLAY, "no-display-sandbox", sandbox=True)
+
+    consumed_state = await consume_state(oauth_state.state)
+
+    assert consumed_state.sandbox is True
 
 
 @pytest.mark.asyncio

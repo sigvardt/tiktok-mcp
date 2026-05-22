@@ -122,6 +122,59 @@ async def test_add_account_returns_url_with_state_and_alias(
 
 
 @pytest.mark.asyncio
+async def test_add_account_sandbox_loads_sandbox_creds(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(
+        backend,
+        ApiType.DISPLAY,
+        sandbox=True,
+        client_id="sandbox-client-id",
+    )
+
+    response = await add_account(
+        ApiType.DISPLAY,
+        alias="nordic-display-sandbox",
+        sandbox=True,
+    )
+
+    assert "error" not in response
+    parsed_url = urllib.parse.urlparse(response["url"])
+    params = urllib.parse.parse_qs(parsed_url.query)
+    assert params["client_key"] == ["sandbox-client-id"]
+    assert params["state"] == [response["state"]]
+
+
+@pytest.mark.asyncio
+async def test_add_account_production_default(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(
+        backend,
+        ApiType.DISPLAY,
+        sandbox=False,
+        client_id="production-client-id",
+    )
+    await _store_app_credentials(
+        backend,
+        ApiType.DISPLAY,
+        sandbox=True,
+        client_id="sandbox-client-id",
+    )
+
+    response = await add_account(ApiType.DISPLAY, alias="nordic-display-prod")
+
+    assert "error" not in response
+    parsed_url = urllib.parse.urlparse(response["url"])
+    params = urllib.parse.parse_qs(parsed_url.query)
+    assert params["client_key"] == ["production-client-id"]
+
+
+@pytest.mark.asyncio
 async def test_add_account_blocked_when_account_changes_disabled() -> None:
     """add_account returns a structured error when the env gate is disabled."""
     response = await add_account(ApiType.DISPLAY)
@@ -187,6 +240,35 @@ async def test_complete_account_login_happy_path(
     assert stored is not None
     account, _tokens = deserialize_account_record(stored)
     assert account.alias == "nordic-display-good"
+
+
+@pytest.mark.asyncio
+async def test_complete_account_login_persists_sandbox_flag(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.DISPLAY, sandbox=True)
+    _mock_token_exchange(monkeypatch, TOKEN_PAYLOAD)
+    add_response = await add_account(
+        ApiType.DISPLAY,
+        alias="nordic-display-sandbox",
+        sandbox=True,
+    )
+    redirect = _redirect_url("synthetic-code", str(add_response["state"]))
+
+    response = await complete_account_login(redirect)
+
+    assert response["alias"] == "nordic-display-sandbox"
+    assert response["sandbox"] is True
+    sandbox_record = await backend.get(
+        account_key(ApiType.DISPLAY, True, "nordic-display-sandbox")
+    )
+    assert sandbox_record is not None
+    assert await backend.get(account_key(ApiType.DISPLAY, False, "nordic-display-sandbox")) is None
+    account, _tokens = deserialize_account_record(sandbox_record)
+    assert account.sandbox is True
 
 
 @pytest.mark.parametrize(
@@ -260,6 +342,24 @@ async def test_rename_account_atomic(
 
 
 @pytest.mark.asyncio
+async def test_rename_account_sandbox_uses_selected_namespace(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    _ = allow_account_changes
+    await _store_account(backend, alias="shared-alias", raw_id="production-id")
+    await _store_account(backend, alias="shared-alias", raw_id="sandbox-id", sandbox=True)
+
+    response = await rename_account("shared-alias", "sandbox-renamed", sandbox=True)
+
+    assert response["alias"] == "sandbox-renamed"
+    assert response["sandbox"] is True
+    assert await backend.get(account_key(ApiType.DISPLAY, False, "shared-alias")) is not None
+    assert await backend.get(account_key(ApiType.DISPLAY, True, "shared-alias")) is None
+    assert await backend.get(account_key(ApiType.DISPLAY, True, "sandbox-renamed")) is not None
+
+
+@pytest.mark.asyncio
 async def test_remove_account_two_step(
     backend: KeyringBackend,
     allow_account_changes: None,
@@ -280,6 +380,27 @@ async def test_remove_account_two_step(
     assert removed["removed"] is True
     assert removed["alias"] == "remove-alias"
     assert await backend.get(account_key(ApiType.DISPLAY, False, "remove-alias")) is None
+
+
+@pytest.mark.asyncio
+async def test_remove_account_sandbox_uses_selected_namespace(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    _ = allow_account_changes
+    await _store_account(backend, alias="shared-remove", raw_id="production-id")
+    await _store_account(backend, alias="shared-remove", raw_id="sandbox-id", sandbox=True)
+
+    first = await remove_account("shared-remove", sandbox=True)
+    removed = await remove_account(
+        "shared-remove",
+        sandbox=True,
+        confirmation_token=str(first["confirmation_token"]),
+    )
+
+    assert removed["removed"] is True
+    assert await backend.get(account_key(ApiType.DISPLAY, False, "shared-remove")) is not None
+    assert await backend.get(account_key(ApiType.DISPLAY, True, "shared-remove")) is None
 
 
 @pytest.mark.asyncio
@@ -326,12 +447,14 @@ async def _store_app_credentials(
     api_type: ApiType,
     *,
     sandbox: bool = False,
+    client_id: str = "test-client-id",
+    client_secret: str = "test-client-secret",
 ) -> None:
     payload = {
         "api_type": api_type.value,
         "sandbox": sandbox,
-        "client_id": "test-client-id",
-        "client_secret": "test-client-secret",
+        "client_id": client_id,
+        "client_secret": client_secret,
         "created_at": NOW.isoformat(),
         "redirect_uri": REDIRECT_URI,
     }
@@ -343,11 +466,12 @@ async def _store_account(
     *,
     alias: str,
     raw_id: str = "test-open-id",
+    sandbox: bool = False,
 ) -> None:
     account = Account(
         alias=alias,
         api_type=ApiType.DISPLAY,
-        sandbox=False,
+        sandbox=sandbox,
         tiktok_id=raw_id,
         display_name="Demo Account",
         avatar_url=None,

@@ -22,6 +22,7 @@ class OAuthInProgress(BaseModel):
 
     state: str
     api_type: ApiType
+    sandbox: bool = False
     pkce_verifier: str | None = None
     suggested_alias: str
     expires_at: datetime
