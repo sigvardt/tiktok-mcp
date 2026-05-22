@@ -1,0 +1,288 @@
+name: Distribution Smoke
+
+on:
+  workflow_run:
+    workflows: ["release.yml"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Package index to smoke
+        required: true
+        type: choice
+        default: pypi
+        options:
+          - pypi
+          - testpypi
+      version:
+        description: Version to smoke, without a leading v
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    name: Smoke ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13"]
+    env:
+      PYTHON_VERSION: ${{ matrix.python }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+          python-version: ${{ matrix.python }}
+
+      - name: Resolve manual smoke coordinates
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          DISPATCH_SOURCE: ${{ inputs.source }}
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          case "$DISPATCH_SOURCE" in
+            pypi|testpypi) ;;
+            *)
+              printf 'Unsupported source: %s\n' "$DISPATCH_SOURCE" >&2
+              exit 1
+              ;;
+          esac
+          version="${DISPATCH_VERSION#v}"
+          if [ -z "$version" ]; then
+            printf 'version input is required\n' >&2
+            exit 1
+          fi
+          {
+            printf 'VERSION=%s\n' "$version"
+            printf 'SOURCE=%s\n' "$DISPATCH_SOURCE"
+            if [ "$DISPATCH_SOURCE" = "testpypi" ]; then
+              printf 'UVX_INDEX_ARGS=--index-url https://test.pypi.org/simple/\n'
+            else
+              printf 'UVX_INDEX_ARGS=\n'
+            fi
+          } >> "$GITHUB_ENV"
+
+      - name: Resolve release smoke coordinates
+        if: ${{ github.event_name == 'workflow_run' }}
+        shell: bash
+        env:
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          tag="${WORKFLOW_RUN_HEAD_BRANCH#refs/tags/}"
+          version="${tag#v}"
+          if [ -z "$version" ] || [ "$version" = "$tag" ]; then
+            printf 'release workflow head_branch did not look like a v-prefixed tag: %s\n' "$WORKFLOW_RUN_HEAD_BRANCH" >&2
+            exit 1
+          fi
+          {
+            printf 'VERSION=%s\n' "$version"
+            printf 'SOURCE=pypi\n'
+            printf 'UVX_INDEX_ARGS=\n'
+          } >> "$GITHUB_ENV"
+
+      - name: Wait for package index propagation
+        shell: bash
+        run: bash .github/scripts/wait_for_pypi.sh "$VERSION" "$SOURCE"
+
+      - name: Smoke uvx --version
+        shell: bash
+        run: |
+          set -euo pipefail
+          index_args=()
+          if [ -n "$UVX_INDEX_ARGS" ]; then
+            read -r -a index_args <<< "$UVX_INDEX_ARGS"
+          fi
+          output="$(uvx --no-cache "${index_args[@]}" --python "$PYTHON_VERSION" "tiktok-mcp@$VERSION" --version)"
+          printf '%s\n' "$output"
+          if [[ "$output" != *"$VERSION"* ]]; then
+            printf 'Expected --version output to contain %s, got: %s\n' "$VERSION" "$output" >&2
+            exit 1
+          fi
+
+      - name: Smoke MCP subprocess boot via claude_desktop_config
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import queue
+          import shlex
+          import subprocess
+          import threading
+          import time
+
+          version = os.environ["VERSION"]
+          python_version = os.environ["PYTHON_VERSION"]
+          index_args = shlex.split(os.environ.get("UVX_INDEX_ARGS", ""))
+          config = {
+              "mcpServers": {
+                  "tiktok-mcp": {
+                      "command": "uvx",
+                      "args": ["--no-cache", *index_args, "--python", python_version, f"tiktok-mcp@{version}"],
+                      "env": {
+                          "TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES": "1",
+                          "TIKTOK_MCP_ALLOW_WRITES": "",
+                          "TIKTOK_MCP_LOG_LEVEL": "INFO",
+                          "TIKTOK_MCP_LOG_FORMAT": "json",
+                      },
+                  }
+              }
+          }
+          server = config["mcpServers"]["tiktok-mcp"]
+          env = os.environ.copy()
+          env.update(server["env"])
+          env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
+          command = [server["command"], *server["args"]]
+          proc = subprocess.Popen(
+              command,
+              stdin=subprocess.PIPE,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              text=True,
+              encoding="utf-8",
+              bufsize=1,
+              env=env,
+          )
+          stdout_lines = queue.Queue()
+
+          def pump_stdout():
+              assert proc.stdout is not None
+              for stdout_line in proc.stdout:
+                  stdout_lines.put(stdout_line)
+              stdout_lines.put(None)
+
+          threading.Thread(target=pump_stdout, daemon=True).start()
+
+          def send(frame):
+              assert proc.stdin is not None
+              proc.stdin.write(json.dumps(frame, separators=(",", ":")) + "\n")
+              proc.stdin.flush()
+
+          def recv(expected_id, timeout=30.0):
+              deadline = time.monotonic() + timeout
+              while True:
+                  remaining = deadline - time.monotonic()
+                  if remaining <= 0:
+                      raise TimeoutError(f"timed out waiting for MCP response id {expected_id}")
+                  line = stdout_lines.get(timeout=remaining)
+                  if line is None:
+                      stderr = proc.stderr.read() if proc.stderr is not None else ""
+                      raise AssertionError(f"MCP server exited before response. stderr={stderr!r}")
+                  if not line.strip():
+                      continue
+                  payload = json.loads(line)
+                  if payload.get("id") == expected_id:
+                      return payload
+
+          try:
+              send({
+                  "jsonrpc": "2.0",
+                  "id": 1,
+                  "method": "initialize",
+                  "params": {
+                      "protocolVersion": "2024-11-05",
+                      "capabilities": {},
+                      "clientInfo": {"name": "distribution-smoke", "version": "1.0.0"},
+                  },
+              })
+              initialize = recv(1)
+              if "error" in initialize:
+                  raise AssertionError(initialize)
+              send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+              send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+              tools_response = recv(2)
+              if "error" in tools_response:
+                  raise AssertionError(tools_response)
+              tools = tools_response.get("result", {}).get("tools")
+              if not isinstance(tools, list):
+                  raise AssertionError(tools_response)
+              if len(tools) < 40:
+                  raise AssertionError(f"expected at least 40 tools, got {len(tools)}")
+              print(f"MCP tools/list returned {len(tools)} tools")
+          finally:
+              proc.terminate()
+              try:
+                  proc.wait(timeout=5)
+              except subprocess.TimeoutExpired:
+                  proc.kill()
+                  proc.wait(timeout=5)
+          PY
+
+      - name: Report distribution smoke failure
+        if: ${{ failure() }}
+        uses: actions/github-script@v7
+        env:
+          CELL_OS: ${{ matrix.os }}
+          CELL_PYTHON: ${{ matrix.python }}
+          RUN_URL: ${{ env.RUN_URL }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const cell = `${process.env.CELL_OS} / Python ${process.env.CELL_PYTHON}`;
+            const version = process.env.VERSION || 'unknown-version';
+            const runUrl = process.env.RUN_URL;
+            const labelName = 'release-blocker';
+
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: labelName });
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: labelName,
+                color: 'b60205',
+                description: 'Release validation failed and needs maintainer attention',
+              });
+            }
+
+            await github.rest.issues.create({
+              owner,
+              repo,
+              title: `Distribution smoke failed for ${version} on ${cell}`,
+              labels: [labelName],
+              body: [
+                `Distribution smoke failed for version \`${version}\`.`,
+                '',
+                `Cell: \`${cell}\``,
+                `Run: ${runUrl}`,
+              ].join('\n'),
+            });
+
+            const { data: releases } = await github.rest.repos.listReleases({ owner, repo, per_page: 1 });
+            if (releases.length === 0) {
+              core.warning('No releases found to annotate.');
+              return;
+            }
+
+            const release = releases[0];
+            const marker = `⚠️ Distribution smoke failed on ${cell}: ${runUrl}`;
+            const body = release.body || '';
+            if (body.includes(marker)) {
+              core.info('Latest release already contains this failure marker.');
+              return;
+            }
+            await github.rest.repos.updateRelease({
+              owner,
+              repo,
+              release_id: release.id,
+              body: `${body}${body ? '\n\n' : ''}${marker}`,
+            });
