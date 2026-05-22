@@ -1,0 +1,20 @@
+interactions:
+- request:
+    body: null
+    headers:
+      Access-Token:
+      - REDACTED
+    method: GET
+    uri: https://business-api.tiktok.com/open_api/v1.3/comment/list/?advertiser_id=advertiser-123&post_id=video-456&page=1&page_size=30&sort_by=newest
+  response:
+    body:
+      string: '{"code":0,"message":"OK","request_id":"req-comments-list","data":{"comments":[{"comment_id":"comment-001","parent_comment_id":null,"author":{"open_id":"open-commenter-001","display_name":"Alex Commenter","avatar_url":"https://example.test/avatar-001.png"},"text":"[SCRUBBED]","like_count":14,"reply_count":2,"create_time":1716379200,"is_top_pinned":true,"is_hidden_by_owner":false,"is_deleted_by_author":false}],"page":1,"page_size":30,"total":1}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-comments-list
+    status:
+      code: 200
+      message: OK
+version: 1
