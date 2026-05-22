@@ -96,6 +96,7 @@ Source: T18 (read tools, Wave 2), T26 (chunked FILE_UPLOAD writes, Wave 3), T27 
 | MCP tool name | TikTok endpoint | HTTP method | Required scope | Annotation | Writes namespace | Wave | Task |
 |---|---|---|---|---|---|---|---|
 | posting_get_post_status | /v2/post/publish/status/fetch/ | POST | video.upload | readOnlyHint | — | 2 | T18 |
+| posting_list_drafts | (no public v2 drafts-list endpoint) | — | video.upload | readOnlyHint | — | 2 | T18 |
 | posting_get_creator_info | /v2/post/publish/creator_info/query/ | POST | video.upload | readOnlyHint | — | 2 | T18 |
 | list_pending_drafts | /v2/post/publish/inbox/video/list/ | POST | video.upload | readOnlyHint | — | 2 | T28 |
 | init_video_upload | /v2/post/publish/inbox/video/init/ | POST | video.upload | destructiveHint | posting | 3 | T26 |
@@ -152,6 +153,7 @@ These rows ship in v0.1 but have an endpoint or scope value that needs a short l
 6. **`list_pending_drafts` endpoint path**: row uses `/v2/post/publish/inbox/video/list/`. T18 marks the draft-list endpoint as "Endpoint TBD". Confirm before T28 starts; if absent, drop the row and surface the gap as a v0.2 deferral here.
 7. **`move_draft_to_publish` endpoint path**: row uses `/v2/post/publish/video/init/` (the direct-post endpoint) because T28 references the same publish init endpoint for converting drafts. Confirm whether a dedicated draft-to-publish endpoint exists, or whether the flow truly reuses the direct-post init with a draft `publish_id` parameter.
 8. **`posting_get_post_status` vs `get_publish_status` deduplication**: T18 ships `posting_get_post_status` and T27 ships `get_publish_status`. Both call `/v2/post/publish/status/fetch/`. Likely a naming overlap; reconcile before Wave 3 (decide which name survives and update the inventory row). Current rows include both to honour the "use the exact name from the plan task spec" rule.
+9. **`posting_list_drafts` endpoint absence**: T18 keeps a registered read-only MCP tool for discoverability, but it returns `{"endpoint_not_available": true, "reason": "TikTok has not exposed a drafts-list endpoint in v2 as of 2026-05-22"}` instead of calling a guessed endpoint. Public Content Posting v2 docs expose inbox upload init and publish status polling, but not a drafts-list read path. Revisit in v0.2 or when TikTok publishes a canonical drafts-list endpoint.
 
 ## Tool count by surface
 
@@ -160,8 +162,8 @@ These rows ship in v0.1 but have an endpoint or scope value that needs a short l
 | Display API | 6 |
 | Marketing API | 33 |
 | Business Organic | 8 |
-| Content Posting | 12 |
+| Content Posting | 13 |
 | Setup | 9 |
-| **Grand total** | **68** |
+| **Grand total** | **69** |
 
-Breakdown by annotation: 28 `readOnlyHint`, 40 `destructiveHint`. Breakdown by wave: 32 in Wave 2 (reads plus Setup plus Display token utilities plus `get_publish_status`), 36 in Wave 3 (write-side delivery). The 60 to 80 target band is met. MCP Resources from T29 are counted separately and not included in this rollup.
+Breakdown by annotation: 29 `readOnlyHint`, 40 `destructiveHint`. Breakdown by wave: 33 in Wave 2 (reads plus Setup plus Display token utilities plus `get_publish_status`), 36 in Wave 3 (write-side delivery). The 60 to 80 target band is met. MCP Resources from T29 are counted separately and not included in this rollup.
