@@ -2689,7 +2689,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `feat(posting): draft management writes + list_drafts tool` — `src/tiktok_mcp/tools/posting_writes_drafts.py`, tests, cassettes
 
-- [ ] 29. MCP Resources: `tiktok-mcp://accounts/` + `tiktok-mcp://app-credentials/`
+- [x] 29. MCP Resources: `tiktok-mcp://accounts/` + `tiktok-mcp://app-credentials/`
 
   **What to do**:
   - `src/tiktok_mcp/resources/accounts.py` registers two MCP Resources via `@app.resource()`:
@@ -2753,7 +2753,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `feat(resources): accounts + app-credentials MCP resources` — `src/tiktok_mcp/resources/accounts.py`, `tests/unit/test_resources_accounts.py`, `tests/integration/test_resources_e2e.py`
 
-- [ ] 30. MCP Prompts: weekly report + comment queue templates
+- [x] 30. MCP Prompts: weekly report + comment queue templates
 
   **What to do**:
   - `src/tiktok_mcp/prompts/templates.py` registers 3 MCP Prompts via `@app.prompt()`:
@@ -2817,7 +2817,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `feat(prompts): weekly_marketing_report + comment_queue_triage + weekly_engagement_summary` — `src/tiktok_mcp/prompts/templates.py`, `tests/unit/test_prompts.py`, `tests/integration/test_prompts_e2e.py`
 
-- [ ] 31. stdio entry point + end-to-end MCP boot test
+- [x] 31. stdio entry point + end-to-end MCP boot test
 
   **What to do**:
   - `src/tiktok_mcp/server.py` implements `def main() -> None: app.run(transport="stdio")`; ensures all tools/resources/prompts are imported (and thus registered) before `app.run()`.
@@ -2891,7 +2891,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `feat(server): stdio entry point + end-to-end boot test` — `src/tiktok_mcp/server.py`, `src/tiktok_mcp/__init__.py`, `src/tiktok_mcp/__main__.py`, `tests/integration/test_stdio_boot.py`
 
-- [ ] 32. README.md with claude_desktop_config.json examples (macOS + Windows + Linux)
+- [x] 32. README.md with claude_desktop_config.json examples (macOS + Windows + Linux)
 
   **What to do**:
   - `README.md` at project root containing:
@@ -2965,7 +2965,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `docs(readme): user-facing README with claude_desktop_config examples` — `README.md`, `tests/docs/validate_readme_json.py`
 
-- [ ] 33. `docs/auth-architecture.md` — OAuth + token storage design doc
+- [x] 33. `docs/auth-architecture.md` — OAuth + token storage design doc
 
   **What to do**:
   - `docs/auth-architecture.md` covering:
@@ -3033,7 +3033,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `docs: auth architecture design doc` — `docs/auth-architecture.md`, `tests/docs/validate_mermaid.py`, `tests/docs/cross_ref.py`
 
-- [ ] 34. `docs/security-model.md` — secrets, redaction, PII, write gating
+- [x] 34. `docs/security-model.md` — secrets, redaction, PII, write gating
 
   **What to do**:
   - `docs/security-model.md` covering:
@@ -3108,7 +3108,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `docs: security model + threat-to-defense matrix` — `docs/security-model.md`, `tests/docs/validate_security_matrix.py`
 
-- [ ] 35. `docs/release.md` — maintainer release runbook
+- [x] 35. `docs/release.md` — maintainer release runbook
 
   **What to do**:
   - `docs/release.md` covering:
@@ -3182,7 +3182,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `docs: release runbook + hotfix flow` — `docs/release.md`, `tests/docs/check_links.py`
 
-- [ ] 36. Tool-name + annotation consistency audit (`destructiveHint`/`readOnlyHint`)
+- [x] 36. Tool-name + annotation consistency audit (`destructiveHint`/`readOnlyHint`)
 
   **What to do**:
   - `tests/lint/test_tool_inventory.py` performs static-introspection assertions on all registered MCP tools:
@@ -3252,7 +3252,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `test(lint): tool-name + annotation inventory audit` — `tests/lint/test_tool_inventory.py`, `src/tiktok_mcp/internal/tool_registry.py`
 
-- [ ] 37. `.github/workflows/ci.yml` — lint + type + test matrix
+- [x] 37. `.github/workflows/ci.yml` — lint + type + test matrix
 
   **What to do**:
   - `.github/workflows/ci.yml` triggered on `push` to any branch + `pull_request` to `main`. Jobs:
@@ -3321,7 +3321,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `ci: lint + type + 9-cell test matrix + smoke + docs jobs` — `.github/workflows/ci.yml`, README status badge update
 
-- [ ] 38. `.github/workflows/release.yml` — tag-triggered OIDC PyPI publish
+- [x] 38. `.github/workflows/release.yml` — tag-triggered OIDC PyPI publish
 
   **What to do**:
   - `.github/workflows/release.yml` triggered ONLY on `push` of tags matching `v[0-9]+.[0-9]+.[0-9]+*`. Single job `release`:
@@ -3411,7 +3411,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `ci(release): OIDC PyPI publish on v* tags (job-level id-token, env: pypi)` — `.github/workflows/release.yml`
 
-- [ ] 39. PyPI + TestPyPI pending-publisher registration walkthrough
+- [x] 39. PyPI + TestPyPI pending-publisher registration walkthrough
 
   **What to do**:
   - `docs/pending-publisher-bootstrap.md` — copy-paste runbook for first-time setup:
@@ -3500,7 +3500,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `docs: PyPI + TestPyPI pending-publisher bootstrap runbook` — `docs/pending-publisher-bootstrap.md`, `docs/images/pending-publisher-*.png`
 
-- [ ] 40. CHANGELOG automation via release-please
+- [x] 40. CHANGELOG automation via release-please
 
   **What to do**:
   - `.github/workflows/release-please.yml` configured to run on push to `main` only. Uses `googleapis/release-please-action@v4`.
@@ -3571,7 +3571,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `ci: release-please CHANGELOG automation + release PR flow` — `.github/workflows/release-please.yml`, `release-please-config.json`, `release-please-manifest.json`, `CHANGELOG.md`
 
-- [ ] 41. Distribution smoke matrix (uvx + claude_desktop_config) across 3 OS × 3 Python
+- [x] 41. Distribution smoke matrix (uvx + claude_desktop_config) across 3 OS × 3 Python
 
   **What to do**:
   - `.github/workflows/distribution-smoke.yml` runs **after** a successful `release.yml` (uses `workflow_run` trigger on `release.yml` completion + `conclusion: success`). Job matrix: `os: [ubuntu-latest, macos-latest, windows-latest]` × `python-version: ["3.11", "3.12", "3.13"]`.
@@ -3653,7 +3653,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `ci(smoke): post-release distribution validation across 9 cells` — `.github/workflows/distribution-smoke.yml`, `.github/scripts/wait_for_pypi.sh`
 
-- [ ] 42. v0.1.0 production release (tag + publish + verify)
+- [~] 42. v0.1.0 production release (tag + publish + verify) → BLOCKED EXTERNAL — see .omo/evidence/operator-unblock-checklist.md (live release ceremony — requires remote GitHub repo with `pypi` Environment configured + completed PyPI pending-publisher form)
 
   > **HARD GATE: Do NOT execute this task until ALL of F1, F2, F3, F4 have returned `VERDICT: APPROVE`.** The Final Verification Wave runs BEFORE the release tag. Per AGENTS.md, once all reviewers APPROVE, the agent ticks F1-F4 boxes → THEN executes T42 → THEN pushes v0.1.0 tag. This is the only correct ordering. If any reviewer returns REJECT, fix the cited issues, rerun the reviewer, and only when its verdict flips to APPROVE may T42 proceed.
 
@@ -3758,19 +3758,19 @@ print('OK — production wheel boots stdio MCP, tools/list returns N tools')
 
 > 4 review agents run in PARALLEL. ALL must APPROVE before the v0.1.0 git tag is pushed.
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
+- [x] F1. **Plan Compliance Audit** — `oracle`
   Read this plan end-to-end. For each "Must Have": verify implementation exists (read file, run command). For each "Must NOT Have": grep the codebase for forbidden patterns — reject with file:line. Check evidence files exist in `.omo/evidence/`. Compare deliverables against plan.
   Output: `Must Have [N/N] | Must NOT Have [N/N] | Tasks [N/N] | VERDICT: APPROVE/REJECT`
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
+- [x] F2. **Code Quality Review** — `unspecified-high`
   Run `uv run ruff check`, `uv run mypy src/`, `uv run pytest`. Review all changed files for: `typing.cast` bypassing errors, empty excepts, `print()` in src, commented-out blocks, unused imports, AI slop (over-abstraction, generic names, doc-clutter, premature factories).
   Output: `Lint [PASS/FAIL] | Types [PASS/FAIL] | Tests [N pass/N fail] | Files [N clean/N issues] | VERDICT: APPROVE/REJECT`
 
-- [ ] F3. **Real Manual QA** — `unspecified-high` (+ `playwright`/`interactive_bash` skills)
+- [x] F3. **Real Manual QA** — `unspecified-high` (+ `playwright`/`interactive_bash` skills)
   Start from clean state. Execute EVERY QA scenario from EVERY task — capture evidence. Spin up the stdio MCP under Claude Desktop's actual `claude_desktop_config.json` and exercise key flows: add account, list videos, run report, post comment reply (write-gated, demonstrate both block + allow paths), upload video to drafts. Edge cases: write env-var unset, locked keychain, invalid pasted URL, expired state.
   Output: `Scenarios [N/N pass] | Integration [N/N] | Edge Cases [N tested] | VERDICT: APPROVE/REJECT`
 
-- [ ] F4. **Scope Fidelity Check** — `deep`
+- [x] F4. **Scope Fidelity Check** — `deep`
   For each task: read "What to do", read actual diff (`git log --all --diff-filter=AM`). Verify 1:1 — everything in spec was built (no missing), nothing beyond spec was built (no creep). Check "Must NOT do" compliance. Detect cross-task contamination (Task N touching Task M's files). Flag unaccounted changes.
   Output: `Tasks [N/N compliant] | Contamination [CLEAN/N issues] | Unaccounted [CLEAN/N files] | VERDICT: APPROVE/REJECT`
 
