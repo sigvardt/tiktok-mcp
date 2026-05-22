@@ -387,9 +387,12 @@ def index_key_name() -> str:
 
 def serialize_account_record(account: Account, tokens: AccountTokens) -> str:
     access_token = tokens.access_token.get_secret_value()
-    refresh_token = tokens.refresh_token.get_secret_value()
+    refresh_token = (
+        tokens.refresh_token.get_secret_value() if tokens.refresh_token is not None else None
+    )
     register_token(access_token, "access_token")
-    register_token(refresh_token, "refresh_token")
+    if refresh_token is not None:
+        register_token(refresh_token, "refresh_token")
 
     account_payload = account.model_dump(mode="json")
     tokens_payload = tokens.model_dump(mode="json")
@@ -410,7 +413,8 @@ def deserialize_account_record(blob: str) -> tuple[Account, AccountTokens]:
 
     record = AccountRecord.model_validate(payload)
     register_token(record.tokens.access_token.get_secret_value(), "access_token")
-    register_token(record.tokens.refresh_token.get_secret_value(), "refresh_token")
+    if record.tokens.refresh_token is not None:
+        register_token(record.tokens.refresh_token.get_secret_value(), "refresh_token")
     return record.account, record.tokens
 
 

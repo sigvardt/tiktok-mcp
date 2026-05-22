@@ -200,6 +200,8 @@ class PostingAPIClient:
             account, tokens = await self._load_account(alias)
             if not _needs_refresh(tokens):
                 return account, tokens
+            if not _has_refresh_token(tokens):
+                raise AccountBrokenError(alias, status=account.status.value)
             refreshed_tokens = await self._refresh_tokens(account, tokens)
             backend = await self._get_backend()
             await atomic_account_update(
@@ -241,6 +243,8 @@ class PostingAPIClient:
             current_access_token = tokens.access_token.get_secret_value()
             if current_access_token != invalid_access_token:
                 return current_access_token
+            if not _has_refresh_token(tokens):
+                raise AccountBrokenError(alias, status=account.status.value)
             refreshed_tokens = await self._refresh_tokens(account, tokens)
             backend = await self._get_backend()
             await atomic_account_update(
@@ -255,7 +259,9 @@ class PostingAPIClient:
 
     async def _refresh_tokens(self, account: Account, tokens: AccountTokens) -> AccountTokens:
         credentials = await self._load_app_credentials(account.sandbox)
-        refresh_token = tokens.refresh_token.get_secret_value()
+        refresh_token = _refresh_token_value(tokens)
+        if refresh_token is None:
+            raise AccountBrokenError(account.alias, status=account.status.value)
         add_runtime_token(refresh_token, "refresh_token")
         response = await self._post_with_retry(
             account.alias,
@@ -437,8 +443,10 @@ def _tokens_from_refresh_payload(
     access_token = _string_value(payload, "access_token")
     refresh_token = (
         _optional_string_value(payload, "refresh_token")
-        or previous_tokens.refresh_token.get_secret_value()
+        or _refresh_token_value(previous_tokens)
     )
+    if refresh_token is None:
+        raise SanitizedHttpxError(status=200, url_path=OAUTH_TOKEN_PATH)
     expires_in = _int_value(payload, "expires_in")
     refresh_expires_in = _optional_int_value(payload, "refresh_expires_in")
     refresh_expires_at = (
@@ -471,7 +479,22 @@ def _credentials_payload(payload: Mapping[str, object]) -> dict[str, object]:
 
 def _register_tokens(tokens: AccountTokens) -> None:
     add_runtime_token(tokens.access_token.get_secret_value(), "access_token")
-    add_runtime_token(tokens.refresh_token.get_secret_value(), "refresh_token")
+    refresh_token = _refresh_token_value(tokens)
+    if refresh_token is not None:
+        add_runtime_token(refresh_token, "refresh_token")
+
+
+def _has_refresh_token(tokens: AccountTokens) -> bool:
+    return _refresh_token_value(tokens) is not None
+
+
+def _refresh_token_value(tokens: AccountTokens) -> str | None:
+    if tokens.refresh_token is None:
+        return None
+    refresh_token = tokens.refresh_token.get_secret_value()
+    if not refresh_token:
+        return None
+    return refresh_token
 
 
 def _chunk_headers(headers: Mapping[str, str], access_token: str) -> dict[str, str]:

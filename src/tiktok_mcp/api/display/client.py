@@ -102,6 +102,8 @@ class DisplayAPIClient:
                 raise AccountBrokenError(stored_account.alias, status=stored_account.status.value)
             if not _expires_within_refresh_margin(stored_tokens):
                 return stored_tokens.access_token.get_secret_value()
+            if not _has_refresh_token(stored_tokens):
+                raise AccountBrokenError(stored_account.alias, status=stored_account.status.value)
             refreshed_tokens = await self._refresh_tokens(stored_account, stored_tokens)
             self._tokens = refreshed_tokens
             return refreshed_tokens.access_token.get_secret_value()
@@ -115,6 +117,7 @@ class DisplayAPIClient:
         json: Any | None = None,
     ) -> Any:
         access_token = await self._ensure_fresh_token()
+        auth_error: DisplayApiError | None = None
         try:
             return await self._request_with_retries(
                 method,
@@ -126,8 +129,10 @@ class DisplayAPIClient:
         except DisplayApiError as exc:
             if not _is_access_token_invalid(exc):
                 raise
+            auth_error = exc
 
-        refreshed_access_token = await self._refresh_after_invalid_token(access_token)
+        assert auth_error is not None
+        refreshed_access_token = await self._refresh_after_invalid_token(access_token, auth_error)
         try:
             return await self._request_with_retries(
                 method,
@@ -313,7 +318,11 @@ class DisplayAPIClient:
         _register_account_tokens(tokens)
         return account, tokens
 
-    async def _refresh_after_invalid_token(self, invalid_access_token: str) -> str:
+    async def _refresh_after_invalid_token(
+        self,
+        invalid_access_token: str,
+        auth_error: DisplayApiError,
+    ) -> str:
         async with self._refresh_lock:
             stored_account, stored_tokens = await self._load_account_record()
             current_access_token = stored_tokens.access_token.get_secret_value()
@@ -321,16 +330,37 @@ class DisplayAPIClient:
             self._tokens = stored_tokens
             if current_access_token != invalid_access_token:
                 return current_access_token
+            if not _has_refresh_token(stored_tokens):
+                broken_account = stored_account.model_copy(update={"status": AccountStatus.BROKEN})
+                backend = await get_backend()
+                await atomic_account_update(
+                    backend,
+                    broken_account.api_type,
+                    broken_account.sandbox,
+                    broken_account.alias,
+                    broken_account,
+                    stored_tokens,
+                )
+                self.account = broken_account
+                self._tokens = stored_tokens
+                raise AccountBrokenError(
+                    stored_account.alias,
+                    status=AccountStatus.BROKEN.value,
+                    context={"endpoint": auth_error.context.get("endpoint")},
+                ) from auth_error
             refreshed_tokens = await self._refresh_tokens(stored_account, stored_tokens)
             self._tokens = refreshed_tokens
             return refreshed_tokens.access_token.get_secret_value()
 
     async def _refresh_tokens(self, account: Account, tokens: AccountTokens) -> AccountTokens:
+        refresh_token = _refresh_token_value(tokens)
+        if refresh_token is None:
+            raise AccountBrokenError(account.alias, status=account.status.value)
         body = {
             "client_key": self.app_credentials.client_id.get_secret_value(),
             "client_secret": self.app_credentials.client_secret.get_secret_value(),
             "grant_type": "refresh_token",
-            "refresh_token": tokens.refresh_token.get_secret_value(),
+            "refresh_token": refresh_token,
         }
         try:
             response = await self._http_client.post(
@@ -413,7 +443,9 @@ def _is_access_token_invalid(exc: DisplayApiError) -> bool:
 
 def _register_account_tokens(tokens: AccountTokens) -> None:
     register_token(tokens.access_token.get_secret_value(), "access_token")
-    register_token(tokens.refresh_token.get_secret_value(), "refresh_token")
+    refresh_token = _refresh_token_value(tokens)
+    if refresh_token is not None:
+        register_token(refresh_token, "refresh_token")
 
 
 def _json_object(response: httpx.Response) -> dict[str, object]:
@@ -443,11 +475,18 @@ def _tokens_from_refresh_payload(
     now = datetime.now(UTC)
     access_token = _required_string(payload, "access_token")
     refresh_token = _optional_string(payload, "refresh_token")
+    retained_refresh_token = refresh_token or _refresh_token_value(previous_tokens)
+    if retained_refresh_token is None:
+        raise DisplayApiError(
+            http_status=200,
+            message="Display OAuth token refresh response is missing refresh_token.",
+            error_code="malformed_token_refresh_response",
+        )
     expires_in = _required_int(payload, "expires_in")
     refresh_expires_in = _optional_int(payload, "refresh_expires_in")
     return AccountTokens(
         access_token=SecretStr(access_token),
-        refresh_token=SecretStr(refresh_token or previous_tokens.refresh_token.get_secret_value()),
+        refresh_token=SecretStr(retained_refresh_token),
         access_token_expires_at=now + timedelta(seconds=expires_in),
         refresh_token_expires_at=(
             now + timedelta(seconds=refresh_expires_in)
@@ -456,6 +495,19 @@ def _tokens_from_refresh_payload(
         ),
         last_rotated_at=now,
     )
+
+
+def _has_refresh_token(tokens: AccountTokens) -> bool:
+    return _refresh_token_value(tokens) is not None
+
+
+def _refresh_token_value(tokens: AccountTokens) -> str | None:
+    if tokens.refresh_token is None:
+        return None
+    refresh_token = tokens.refresh_token.get_secret_value()
+    if not refresh_token:
+        return None
+    return refresh_token
 
 
 def _required_string(payload: Mapping[str, object], key: str) -> str:

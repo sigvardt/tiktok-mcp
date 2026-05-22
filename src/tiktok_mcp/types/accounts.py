@@ -52,7 +52,7 @@ class AccountTokens(BaseModel):
     model_config: ClassVar[ConfigDict] = STRICT_MODEL_CONFIG
 
     access_token: SecretStr
-    refresh_token: SecretStr
+    refresh_token: SecretStr | None = None
     access_token_expires_at: datetime
     refresh_token_expires_at: datetime | None = None
     last_rotated_at: datetime = Field(default_factory=utc_now)
@@ -62,7 +62,7 @@ class AccountWithTokens(Account):
     model_config: ClassVar[ConfigDict] = STRICT_MODEL_CONFIG
 
     access_token: SecretStr
-    refresh_token: SecretStr
+    refresh_token: SecretStr | None = None
     access_token_expires_at: datetime
     refresh_token_expires_at: datetime | None = None
     last_rotated_at: datetime = Field(default_factory=utc_now)

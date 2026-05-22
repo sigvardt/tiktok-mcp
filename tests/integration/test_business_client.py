@@ -131,20 +131,24 @@ async def test_code_nonzero_raises_business_api_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_auth_error_without_refresh_token_raises_account_broken_without_refresh() -> None:
+async def test_no_refresh_token_immediate_account_broken() -> None:
+    backend = MemoryBackend()
     paths: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         paths.append(request.url.path)
         return _business_error(request, code=40100, message="Invalid access token")
 
-    async with _client(httpx.MockTransport(handler), refresh_token="") as client:
+    async with _client(httpx.MockTransport(handler), refresh_token=None, backend=backend) as client:
         with pytest.raises(AccountBrokenError) as exc_info:
             _ = await client.get(TEST_PATH)
 
     assert paths == [TEST_PATH]
     assert exc_info.value.context["re_auth_required"] is True
     assert exc_info.value.context["tiktok_code"] == 40100
+    stored_account, stored_tokens = _stored_record(backend)
+    assert stored_account.status is AccountStatus.BROKEN
+    assert stored_tokens.refresh_token is None
 
 
 @pytest.mark.asyncio
@@ -188,6 +192,7 @@ async def test_auth_error_with_refresh_token_refreshes_and_retries_once(
     stored_account, stored_tokens = _stored_record(backend)
     assert stored_account.status is AccountStatus.OK
     assert stored_tokens.access_token.get_secret_value() == "access-token-refreshed"
+    assert stored_tokens.refresh_token is not None
     assert stored_tokens.refresh_token.get_secret_value() == "refresh-token-refreshed"
     with caplog.at_level(logging.INFO):
         logging.getLogger().info(
@@ -300,7 +305,7 @@ async def test_spike_s3_cassette_contract_compatible() -> None:
 def _client(
     transport: httpx.AsyncBaseTransport,
     *,
-    refresh_token: str = "refresh-token-current",
+    refresh_token: str | None = "refresh-token-current",
     backend: MemoryBackend | None = None,
 ) -> BusinessAPIClient:
     return BusinessAPIClient(
@@ -311,7 +316,7 @@ def _client(
     )
 
 
-def _account(*, refresh_token: str) -> AccountWithTokens:
+def _account(*, refresh_token: str | None) -> AccountWithTokens:
     return AccountWithTokens(
         alias="business-demo",
         api_type=ApiType.BUSINESS_ORGANIC,
@@ -324,7 +329,7 @@ def _account(*, refresh_token: str) -> AccountWithTokens:
         last_used_at=None,
         status=AccountStatus.OK,
         access_token=SecretStr("access-token-current"),
-        refresh_token=SecretStr(refresh_token),
+        refresh_token=SecretStr(refresh_token) if refresh_token is not None else None,
         access_token_expires_at=NOW + timedelta(minutes=5),
         refresh_token_expires_at=NOW + timedelta(days=30) if refresh_token else None,
         last_rotated_at=NOW,

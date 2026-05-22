@@ -254,6 +254,7 @@ class BusinessAPIClient:
         tokens = await self._ensure_tokens()
         failed_access_token = tokens.access_token.get_secret_value()
         if not self._has_refresh_token(tokens):
+            await self._mark_account_broken()
             raise self._account_broken_error(auth_error) from auth_error
 
         async with await _refresh_lock_for(self.account):
@@ -262,7 +263,8 @@ class BusinessAPIClient:
                 try:
                     await self._refresh_tokens(current_tokens)
                 except BusinessApiError as exc:
-                    await self._mark_account_broken()
+                    if exc.tiktok_code in _AUTH_ERROR_CODES:
+                        await self._mark_account_broken()
                     raise self._account_broken_error(exc) from exc
 
         try:
@@ -283,7 +285,15 @@ class BusinessAPIClient:
             raise
 
     async def _refresh_tokens(self, tokens: AccountTokens) -> None:
-        refresh_token = tokens.refresh_token.get_secret_value()
+        refresh_token = _refresh_token_value(tokens)
+        if refresh_token is None:
+            raise self._account_broken_error(
+                BusinessApiError(
+                    code=-1,
+                    message="Business token refresh requires a refresh token.",
+                    context={"endpoint": self.REFRESH_PATH},
+                )
+            )
         body = {
             "app_id": self.app_credentials.client_id.get_secret_value(),
             "secret": self.app_credentials.client_secret.get_secret_value(),
@@ -397,7 +407,7 @@ class BusinessAPIClient:
         return {"Access-Token": tokens.access_token.get_secret_value()}
 
     def _has_refresh_token(self, tokens: AccountTokens) -> bool:
-        return bool(tokens.refresh_token.get_secret_value())
+        return _refresh_token_value(tokens) is not None
 
     def _account_broken_error(self, business_error: BusinessApiError) -> AccountBrokenError:
         return AccountBrokenError(
@@ -489,7 +499,18 @@ def _tokens_from_account(account: Account | AccountWithTokens) -> AccountTokens 
 
 def _register_tokens(tokens: AccountTokens) -> None:
     add_runtime_token(tokens.access_token.get_secret_value(), "access_token")
-    add_runtime_token(tokens.refresh_token.get_secret_value(), "refresh_token")
+    refresh_token = _refresh_token_value(tokens)
+    if refresh_token is not None:
+        add_runtime_token(refresh_token, "refresh_token")
+
+
+def _refresh_token_value(tokens: AccountTokens) -> str | None:
+    if tokens.refresh_token is None:
+        return None
+    refresh_token = tokens.refresh_token.get_secret_value()
+    if not refresh_token:
+        return None
+    return refresh_token
 
 
 def _required_string(payload: Mapping[str, Any], key: str) -> str:

@@ -259,7 +259,8 @@ async def remove_account(alias: str, confirmation_token: str | None = None) -> d
             return {"error": "account_not_found"}
         _account, tokens = deserialize_account_record(raw_record)
         unregister_token(tokens.access_token.get_secret_value())
-        unregister_token(tokens.refresh_token.get_secret_value())
+        if tokens.refresh_token is not None:
+            unregister_token(tokens.refresh_token.get_secret_value())
         await backend.delete(account_key_for_alias)
         _ = _PENDING_REMOVALS.pop(alias, None)
         return {"removed": True, "alias": alias, "removed_at": datetime.now(UTC).isoformat()}
