@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import urllib.parse
@@ -151,7 +152,7 @@ async def test_add_account_sandbox_loads_sandbox_creds(
 
 
 @pytest.mark.asyncio
-async def test_add_account_uses_tiktok_hex_pkce_challenge(
+async def test_add_account_uses_rfc7636_pkce_challenge(
     backend: KeyringBackend,
     allow_account_changes: None,
     monkeypatch: pytest.MonkeyPatch,
@@ -165,8 +166,12 @@ async def test_add_account_uses_tiktok_hex_pkce_challenge(
 
     parsed_url = urllib.parse.urlparse(response["url"])
     params = urllib.parse.parse_qs(parsed_url.query)
+    expected_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(pkce_verifier.encode("ascii")).digest()
+    ).rstrip(b"=").decode("ascii")
+
     assert len(pkce_verifier) == 43
-    assert params["code_challenge"] == [hashlib.sha256(pkce_verifier.encode("ascii")).hexdigest()]
+    assert params["code_challenge"] == [expected_challenge]
     assert params["code_challenge_method"] == ["S256"]
 
 

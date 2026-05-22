@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import re
@@ -837,11 +838,15 @@ def _valid_alias(alias: str) -> bool:
 
 
 def _build_pkce_challenge(code_verifier: str) -> str:
-    return hashlib.sha256(code_verifier.encode("ascii")).hexdigest()
+    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
 def _new_pkce_verifier() -> str:
-    return secrets.token_urlsafe(32)
+    verifier = secrets.token_urlsafe(32)
+    if not 43 <= len(verifier) <= 128:
+        raise ValueError(f"Generated PKCE verifier has invalid length {len(verifier)}.")
+    return verifier
 
 
 def _pending_or_new(pending_key: str, now: datetime) -> tuple[str, datetime]:

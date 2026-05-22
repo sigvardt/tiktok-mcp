@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 from pydantic import SecretStr
 
+from tiktok_mcp.tools.accounts import _build_pkce_challenge, _new_pkce_verifier
 from tiktok_mcp.types.accounts import AccountTokens
 
 
@@ -16,3 +19,17 @@ def test_account_tokens_no_refresh() -> None:
 
     assert tokens.refresh_token is None
     assert tokens.refresh_token_expires_at is None
+
+
+def test_pkce_challenge_matches_rfc7636_s256() -> None:
+    verifier = "A" * 43
+    challenge = _build_pkce_challenge(verifier)
+    expected = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+
+    assert 43 <= len(verifier) <= 128
+    assert 43 <= len(_new_pkce_verifier()) <= 128
+    assert challenge == expected
