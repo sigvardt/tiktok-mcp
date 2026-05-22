@@ -13,9 +13,10 @@ from mcp.server.fastmcp import FastMCP
 from tiktok_mcp import __version__
 
 app: FastMCP = FastMCP("tiktok-mcp")
-from tiktok_mcp.tools import app_credentials as _app_credentials  # noqa: E402,F401  (register tools)
+from tiktok_mcp.tools import accounts as _accounts  # noqa: E402,F401  (register tools)
 from tiktok_mcp.tools import rate_limit as _rate_limit  # noqa: E402,F401  (register tools)
 
+from tiktok_mcp.tools import app_credentials as _app_credentials  # noqa: E402,F401  (register tools)
 
 
 def main() -> None:

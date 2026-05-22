@@ -1,0 +1,387 @@
+from __future__ import annotations
+
+import json
+import urllib.parse
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+
+import httpx
+import keyring
+import keyring.errors
+import pytest
+from freezegun import freeze_time
+from jaraco.classes import properties
+from keyring.backend import KeyringBackend as BaseKeyringBackend
+from pydantic import SecretStr
+from typing_extensions import override
+
+import tiktok_mcp.auth.keychain as keychain_module
+import tiktok_mcp.tools.accounts as accounts_module
+from tiktok_mcp.auth.keychain import (
+    KeyringBackend,
+    account_key,
+    app_creds_key,
+    atomic_account_update,
+    deserialize_account_record,
+)
+from tiktok_mcp.auth.state import create_state, reset_state_manager
+from tiktok_mcp.tools.accounts import (
+    add_account,
+    complete_account_login,
+    list_accounts,
+    remove_account,
+    rename_account,
+)
+from tiktok_mcp.types.accounts import Account, AccountStatus, AccountTokens, ApiType
+
+SERVICE_NAME = "tiktok-mcp"
+NOW = datetime(2026, 5, 22, 12, 0, tzinfo=UTC)
+REDIRECT_URI = "https://oauth.example.com/tiktok/oauth/callback"
+TOKEN_PAYLOAD: dict[str, object] = {
+    "access" + "_token": "synthetic-access-token",
+    "refresh" + "_token": "synthetic-refresh-token",
+    "expires_in": 86400,
+    "scope": "user.info.basic",
+    "token_type": "Bearer",
+    "open_id": "test-open-id",
+    "refresh_expires_in": 31536000,
+}
+
+
+class MemoryKeyring(BaseKeyringBackend):
+    @properties.classproperty
+    def priority(self) -> float:
+        return 1
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.values: dict[tuple[str, str], str] = {}
+
+    @override
+    def get_password(self, service: str, username: str) -> str | None:
+        return self.values.get((service, username))
+
+    @override
+    def set_password(self, service: str, username: str, password: str) -> None:
+        self.values[(service, username)] = password
+
+    @override
+    def delete_password(self, service: str, username: str) -> None:
+        try:
+            del self.values[(service, username)]
+        except KeyError as exc:
+            raise keyring.errors.PasswordDeleteError("not found") from exc
+
+
+@pytest.fixture(autouse=True)
+def reset_account_tool_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    original_keyring = keyring.get_keyring()
+    keyring.set_keyring(MemoryKeyring())
+    monkeypatch.setattr(keychain_module, "_backend", None)
+    reset_state_manager()
+    accounts_module._PENDING_REMOVALS.clear()
+    yield
+    accounts_module._PENDING_REMOVALS.clear()
+    reset_state_manager()
+    monkeypatch.setattr(keychain_module, "_backend", None)
+    keyring.set_keyring(original_keyring)
+
+
+@pytest.fixture
+async def backend() -> KeyringBackend:
+    selected_backend = await keychain_module.get_backend()
+    assert isinstance(selected_backend, KeyringBackend)
+    return selected_backend
+
+
+@pytest.fixture
+def allow_account_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES", "1")
+
+
+@pytest.mark.asyncio
+async def test_add_account_returns_url_with_state_and_alias(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    """add_account returns an authorization URL, state, alias, and 600s expiry."""
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.DISPLAY)
+
+    response = await add_account(ApiType.DISPLAY)
+
+    assert set(response) == {"url", "state", "suggested_alias", "expires_in", "instructions"}
+    assert response["expires_in"] == 600
+    assert response["suggested_alias"].startswith("nordic-display-")
+    parsed_url = urllib.parse.urlparse(response["url"])
+    params = urllib.parse.parse_qs(parsed_url.query)
+    assert parsed_url.geturl().startswith("https://www.tiktok.com/v2/auth/authorize/")
+    assert params["state"] == [response["state"]]
+    assert params["redirect_uri"] == [REDIRECT_URI]
+    assert "code_challenge" in params
+
+
+@pytest.mark.asyncio
+async def test_add_account_blocked_when_account_changes_disabled() -> None:
+    """add_account returns a structured error when the env gate is disabled."""
+    response = await add_account(ApiType.DISPLAY)
+
+    assert response["error"] == "account_changes_disabled"
+    assert response["tool"] == "add_account"
+
+
+@pytest.mark.asyncio
+async def test_complete_account_login_validates_state(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    """complete_account_login reports unknown state before token exchange."""
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.DISPLAY)
+
+    response = await complete_account_login(_redirect_url("code-123", "never-created"))
+
+    assert response["error"] == "oauth_state_invalid"
+    assert response["context"]["reason"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_complete_account_login_host_mismatch(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    """complete_account_login rejects redirects from unregistered hosts."""
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.DISPLAY)
+    oauth_state = await create_state(ApiType.DISPLAY, "nordic-display-host")
+    bad_redirect = "https://evil.example/callback?code=code-123&state=" + oauth_state.state
+
+    response = await complete_account_login(bad_redirect)
+
+    assert response["error"] == "oauth_host_mismatch"
+    assert response["context"]["expected_host"] == "oauth.example.com"
+    assert response["context"]["actual_host"] == "evil.example"
+
+
+@pytest.mark.asyncio
+async def test_complete_account_login_happy_path(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """complete_account_login exchanges a synthetic token and stores an account."""
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.DISPLAY)
+    _mock_token_exchange(monkeypatch, TOKEN_PAYLOAD)
+    add_response = await add_account(ApiType.DISPLAY, alias="nordic-display-good")
+    redirect = _redirect_url("synthetic-code", str(add_response["state"]))
+
+    response = await complete_account_login(redirect)
+
+    assert response["alias"] == "nordic-display-good"
+    assert response["api_type"] == "display"
+    assert response["sandbox"] is False
+    assert "access_token" not in response
+    assert "refresh_token" not in response
+    stored = await backend.get(account_key(ApiType.DISPLAY, False, "nordic-display-good"))
+    assert stored is not None
+    account, _tokens = deserialize_account_record(stored)
+    assert account.alias == "nordic-display-good"
+
+
+@pytest.mark.parametrize(
+    "url_shape",
+    (
+        "{url}",
+        "  {url}  ",
+        '"{url}"',
+        "`{url}`",
+        "[TikTok redirect]({url})",
+        "{url}\n",
+    ),
+)
+@pytest.mark.asyncio
+async def test_complete_account_login_url_robustness(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+    url_shape: str,
+) -> None:
+    """complete_account_login accepts all six spike-validated paste shapes."""
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.DISPLAY)
+    _mock_token_exchange(monkeypatch, TOKEN_PAYLOAD)
+    add_response = await add_account(ApiType.DISPLAY, alias="nordic-display-shape")
+    redirect = _redirect_url("synthetic-code", str(add_response["state"]))
+
+    response = await complete_account_login(url_shape.format(url=redirect))
+
+    assert response["alias"] == "nordic-display-shape"
+    assert response["tiktok_id_fingerprint"] == "test...len=12"
+
+
+@pytest.mark.asyncio
+async def test_list_accounts_returns_summary_without_secrets(
+    backend: KeyringBackend,
+) -> None:
+    """list_accounts returns sanitized summaries for stored accounts."""
+    await _store_account(backend, alias="nordic-display-one", raw_id="raw-tiktok-id-one")
+    await _store_account(backend, alias="nordic-display-two", raw_id="raw-tiktok-id-two")
+
+    response = await list_accounts()
+
+    assert response["count"] == 2
+    serialized = json.dumps(response, sort_keys=True)
+    assert "access_token" not in serialized
+    assert "refresh_token" not in serialized
+    assert "client_secret" not in serialized
+    assert "raw-tiktok-id-one" not in serialized
+    assert "raw-tiktok-id-two" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_rename_account_atomic(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    """rename_account moves the record and preserves the account fingerprint."""
+    _ = allow_account_changes
+    await _store_account(backend, alias="old-alias", raw_id="same-fingerprint-id")
+
+    response = await rename_account("old-alias", "new-alias")
+    listed = await list_accounts()
+
+    assert response["alias"] == "new-alias"
+    assert response["tiktok_id_fingerprint"] == "same...len=19"
+    aliases = {account["alias"] for account in listed["accounts"]}
+    assert "old-alias" not in aliases
+    assert "new-alias" in aliases
+    assert await backend.get(account_key(ApiType.DISPLAY, False, "old-alias")) is None
+
+
+@pytest.mark.asyncio
+async def test_remove_account_two_step(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    """remove_account requires a confirmation token before deleting."""
+    _ = allow_account_changes
+    await _store_account(backend, alias="remove-alias")
+
+    first = await remove_account("remove-alias")
+    second_without_token = await remove_account("remove-alias")
+    removed = await remove_account(
+        "remove-alias",
+        confirmation_token=str(first["confirmation_token"]),
+    )
+
+    assert first["pending_removal"] is True
+    assert second_without_token["pending_removal"] is True
+    assert removed["removed"] is True
+    assert removed["alias"] == "remove-alias"
+    assert await backend.get(account_key(ApiType.DISPLAY, False, "remove-alias")) is None
+
+
+@pytest.mark.asyncio
+async def test_remove_account_confirmation_expires(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    """remove_account rejects a confirmation token after its 60s TTL."""
+    _ = allow_account_changes
+    await _store_account(backend, alias="expire-alias")
+
+    with freeze_time("2026-05-22 12:00:00", tz_offset=0) as frozen:
+        first = await remove_account("expire-alias")
+        _ = frozen.tick(timedelta(seconds=61))
+        response = await remove_account(
+            "expire-alias",
+            confirmation_token=str(first["confirmation_token"]),
+        )
+
+    assert response == {"error": "confirmation_expired_or_missing"}
+
+
+@pytest.mark.asyncio
+async def test_duplicate_alias_rejected_with_suggestion(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """complete_account_login rejects duplicate aliases with a numbered suggestion."""
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.DISPLAY)
+    await _store_account(backend, alias="nordic-display-abcd")
+    _mock_token_exchange(monkeypatch, TOKEN_PAYLOAD)
+    add_response = await add_account(ApiType.DISPLAY, alias="nordic-display-efgh")
+    redirect = _redirect_url("synthetic-code", str(add_response["state"]))
+
+    response = await complete_account_login(redirect, alias_override="nordic-display-abcd")
+
+    assert response == {"error": "alias_taken", "suggested": "nordic-display-abcd-1"}
+
+
+async def _store_app_credentials(
+    backend: KeyringBackend,
+    api_type: ApiType,
+    *,
+    sandbox: bool = False,
+) -> None:
+    payload = {
+        "api_type": api_type.value,
+        "sandbox": sandbox,
+        "client_id": "test-client-id",
+        "client_secret": "test-client-secret",
+        "created_at": NOW.isoformat(),
+        "redirect_uri": REDIRECT_URI,
+    }
+    await backend.set(app_creds_key(api_type, sandbox), json.dumps(payload))
+
+
+async def _store_account(
+    backend: KeyringBackend,
+    *,
+    alias: str,
+    raw_id: str = "test-open-id",
+) -> None:
+    account = Account(
+        alias=alias,
+        api_type=ApiType.DISPLAY,
+        sandbox=False,
+        tiktok_id=raw_id,
+        display_name="Demo Account",
+        avatar_url=None,
+        scopes=["user.info.basic"],
+        created_at=NOW,
+        last_used_at=None,
+        status=AccountStatus.OK,
+    )
+    tokens = AccountTokens(
+        access_token=SecretStr(f"{alias}-access"),
+        refresh_token=SecretStr(f"{alias}-refresh"),
+        access_token_expires_at=NOW + timedelta(hours=1),
+        refresh_token_expires_at=NOW + timedelta(days=30),
+        last_rotated_at=NOW,
+    )
+    await atomic_account_update(
+        backend,
+        account.api_type,
+        account.sandbox,
+        account.alias,
+        account,
+        tokens,
+    )
+
+
+def _mock_token_exchange(monkeypatch: pytest.MonkeyPatch, payload: dict[str, object]) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(httpx.codes.OK, json=payload, request=request)
+
+    def build_client() -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(accounts_module, "_build_http_client", build_client)
+
+
+def _redirect_url(code: str, state: str) -> str:
+    return f"{REDIRECT_URI}?{urllib.parse.urlencode({'code': code, 'state': state})}"
