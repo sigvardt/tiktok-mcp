@@ -1,0 +1,22 @@
+interactions:
+- request:
+    body: '{"advertiser_id":"advertiser-123","adgroup_id":"adgroup-456","creative_material_mode":"CUSTOM","ad_name":"Launch single video","ad_format":"SINGLE_VIDEO","identity_type":"TT_USER","identity_id":"identity-123","video_id":"video-123","ad_text":"Try it today","landing_page_url":"https://example.test/landing","call_to_action":"LEARN_MORE","display_name":"Demo Brand","creative_authorized":false}'
+    headers:
+      Access-Token:
+      - REDACTED
+      Content-Type:
+      - application/json
+    method: POST
+    uri: https://business-api.tiktok.com/open_api/v1.3/ad/create/
+  response:
+    body:
+      string: '{"code":0,"message":"OK","request_id":"req-ad-create","data":{"ad_id":"ad-789"}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-ad-create
+    status:
+      code: 200
+      message: OK
+version: 1
