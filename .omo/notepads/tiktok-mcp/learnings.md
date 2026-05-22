@@ -169,3 +169,10 @@ mangled in transit. The session context provides the canonical value.
 - FILE_UPLOAD keeps upload session metadata in-memory by `publish_id` only so `upload_video_chunk` can compute exact `Content-Range` without persisting draft state across MCP restarts.
 - Chunk PUTs use `PostingAPIClient.put_chunk_to_url(...)`, which retries exactly once after a 401 by reusing the Content Posting atomic refresh-token rotation path; the keychain lock is held only for the refresh/write, not the upload body transfer.
 - Draft upload init intentionally sends only `source_info` with `source: FILE_UPLOAD`; no `post_info` is emitted, keeping Content Posting uploads in TikTok's draft inbox by default.
+
+## [2026-05-22T15:55Z] Task: T24
+
+- Creative asset signatures are raw full-file SHA-256 digests. Do not reuse audience hashing normalization for files; stream the source bytes into `hashlib.sha256()` unchanged.
+- Video creative uploads stream 5MB-64MB chunks through `chunk_file()`. The 8MB replay fixture must produce at least two multipart POSTs, while dedup responses with an existing `video_id` stop the upload immediately.
+- Multipart creative upload support is isolated in `tools/marketing_writes_creatives.py` on top of `BusinessAPIClient` auth/header handling so the shared client surface stays stable while parallel write-tool tasks land.
+

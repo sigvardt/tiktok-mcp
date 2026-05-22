@@ -1,0 +1,19 @@
+{
+  "requests": [
+    {
+      "body_bytes": 51651,
+      "has_access_token": true,
+      "method": "POST",
+      "path": "/open_api/v1.3/file/image/ad/upload/"
+    }
+  ],
+  "result": {
+    "format": "JPG",
+    "height": 240,
+    "image_id": "manual-img-1",
+    "image_url": "https://example.test/manual.jpg",
+    "signature": "manual-image-signature",
+    "size": 51200,
+    "width": 320
+  }
+}

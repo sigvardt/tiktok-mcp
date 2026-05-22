@@ -1,0 +1,27 @@
+{
+  "requests": [
+    {
+      "body_bytes": 5243820,
+      "has_access_token": true,
+      "method": "POST",
+      "path": "/open_api/v1.3/file/video/ad/upload/"
+    },
+    {
+      "body_bytes": 3146668,
+      "has_access_token": true,
+      "method": "POST",
+      "path": "/open_api/v1.3/file/video/ad/upload/"
+    }
+  ],
+  "result": {
+    "bit_rate": 4000,
+    "duration": 12.5,
+    "file_name": "sample_8mb.mp4",
+    "format": "MP4",
+    "height": 1080,
+    "size": 8388608,
+    "video_id": "manual-vid-1",
+    "video_signature": "manual-video-signature",
+    "width": 1920
+  }
+}

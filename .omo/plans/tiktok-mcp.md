@@ -2333,7 +2333,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `feat(marketing): custom audience upload tools (PII-hashed, env-gated)` — `src/tiktok_mcp/tools/marketing_writes_audiences.py`, `src/tiktok_mcp/marketing/audience_hashing.py`, `tests/unit/test_audiences_writes.py`, `tests/fixtures/audiences/sample_emails.csv`, cassettes
 
-- [ ] 24. Marketing API write tools: Creative asset uploads
+- [x] 24. Marketing API write tools: Creative asset uploads
 
   **What to do**:
   - `tools/marketing_writes_creatives.py` exposing `upload_video_asset`, `upload_image_asset`, `delete_video_asset`, `delete_image_asset` against `/open_api/v1.3/file/video/ad/upload/`, `/file/image/ad/upload/`, `/file/video/ad/delete/`, `/file/image/ad/delete/`.

@@ -22,6 +22,7 @@ from tiktok_mcp.tools import comments_read as _comments_read  # noqa: E402,F401
 from tiktok_mcp.tools import display_read as _display_read  # noqa: E402,F401
 from tiktok_mcp.tools import marketing_read as _marketing_read  # noqa: E402,F401
 from tiktok_mcp.tools import marketing_reports as _marketing_reports  # noqa: E402,F401
+from tiktok_mcp.tools import marketing_writes_creatives as _marketing_writes_creatives  # noqa: E402,F401
 from tiktok_mcp.tools import (  # noqa: E402,F401
     marketing_writes_adgroups as _marketing_writes_adgroups,
 )

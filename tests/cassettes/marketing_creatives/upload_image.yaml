@@ -1,0 +1,18 @@
+interactions:
+- request:
+    method: POST
+    uri: https://business-api.tiktok.com/open_api/v1.3/file/image/ad/upload/
+    body: '[multipart body omitted]'
+    headers:
+      Access-Token:
+      - REDACTED
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{"code":0,"message":"OK","request_id":"req-image-replay","data":{"image_id":"img-replay-1","image_url":"https://p16-ad-sg.tiktokcdn.com/sample.jpg","signature":"cassette-image-signature","size":51200,"format":"JPG","height":240,"width":320}}'
+version: 1

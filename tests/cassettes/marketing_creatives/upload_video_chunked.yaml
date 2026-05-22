@@ -1,0 +1,34 @@
+interactions:
+- request:
+    method: POST
+    uri: https://business-api.tiktok.com/open_api/v1.3/file/video/ad/upload/
+    body: '[multipart chunk 1 omitted]'
+    headers:
+      Access-Token:
+      - REDACTED
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{"code":0,"message":"OK","request_id":"req-video-replay-1","data":{"upload_id":"upload-replay-1","chunk_index":1}}'
+- request:
+    method: POST
+    uri: https://business-api.tiktok.com/open_api/v1.3/file/video/ad/upload/
+    body: '[multipart chunk 2 omitted]'
+    headers:
+      Access-Token:
+      - REDACTED
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{"code":0,"message":"OK","request_id":"req-video-replay-2","data":{"video_id":"vid-replay-1","video_signature":"cassette-video-signature","size":8388608,"format":"MP4","height":1080,"width":1920,"bit_rate":4000,"duration":12.5,"file_name":"sample_8mb.mp4"}}'
+version: 1
