@@ -154,6 +154,12 @@ mangled in transit. The session context provides the canonical value.
 - v0.1 keeps comment/account ownership validation as a pre-HTTP hook because T17 shipped list/reply-list only and no single-comment lookup endpoint; replace the hook with a live lookup if TikTok exposes one later.
 ## [2026-05-22T13:54:08Z] Task: T23
 
+## [2026-05-22T13:52:00Z] Task: T28
+
+- `move_draft_to_publish` and `delete_draft` are Content Posting write tools with `destructiveHint=True` and `@require_writes_enabled("posting")`; they validate `publish_id` and Direct Post `post_info` with inline Pydantic models before any HTTP request.
+- The T28 write signatures intentionally omit `alias`, so the tool resolves a single stored Content Posting account before calling `PostingAPIClient.request(...)`; if multiple posting accounts exist, callers should use an alias-bearing flow before extending this surface.
+- `list_pending_drafts` remains read-only and ungated. It is a thin alias over T18 `posting_list_drafts`, adding `alias` to the existing `endpoint_not_available` shape because TikTok still has no public v2 drafts-list endpoint as of 2026-05-22.
+
 - Custom Audience uploads stream plaintext CSV rows through `HashedAudienceCSVStream`, lower/trim emails, strip phone separators, SHA-256 hash in memory, and hand httpx a reusable file-like object so an auth-refresh retry can seek back to the start without writing hashes to disk.
 - Audience upload path validation rejects network URLs, raw `..` segments, non-files, files outside both `Path.home()` and `Path.cwd()`, and files over 100MB before constructing the Business API client, so invalid-path tests make zero outbound HTTP.
 - Audience upload INFO logging should stay to structured metadata only: `filename_hash`, `row_count_estimate`, and `file_size_bytes`; tests assert fixture plaintext emails never appear in caplog or multipart bodies.

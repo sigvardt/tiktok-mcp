@@ -101,12 +101,13 @@ class PostingAPIClient:
             self._http_client = None
 
     async def get_post_status(self, alias: str, publish_id: str) -> PostStatus:
-        response = await self._post_authenticated(
+        data = await self.request(
             alias,
+            "POST",
             POST_STATUS_PATH,
             json_body={"publish_id": publish_id},
         )
-        return cast(PostStatus, decode_display_response(response, data_model=PostStatus))
+        return PostStatus.model_validate(data)
 
     async def get_creator_info(self, alias: str) -> CreatorInfo:
         """Fetch creator posting capability info without caching.
@@ -114,8 +115,8 @@ class PostingAPIClient:
         TikTok privacy options can change in the app, so callers must fetch this
         live before initiating an upload rather than relying on cached values.
         """
-        response = await self._post_authenticated(alias, CREATOR_INFO_PATH, json_body={})
-        return cast(CreatorInfo, decode_display_response(response, data_model=CreatorInfo))
+        data = await self.request(alias, "POST", CREATOR_INFO_PATH, json_body={})
+        return CreatorInfo.model_validate(data)
 
     async def list_drafts(
         self,
@@ -126,6 +127,19 @@ class PostingAPIClient:
     ) -> dict[str, object]:
         _ = alias, max_count, cursor
         return drafts_endpoint_not_available()
+
+    async def request(
+        self,
+        alias: str,
+        method: str,
+        path: str,
+        *,
+        json_body: Mapping[str, object],
+    ) -> dict[str, object]:
+        if method.upper() != "POST":
+            raise ValueError("Content Posting client currently supports POST JSON requests only")
+        response = await self._post_authenticated(alias, path, json_body=json_body)
+        return cast(dict[str, object], decode_display_response(response))
 
     async def _post_authenticated(
         self,

@@ -26,6 +26,7 @@ from tiktok_mcp.tools import (  # noqa: E402,F401
     marketing_writes_adgroups as _marketing_writes_adgroups,
 )
 from tiktok_mcp.tools import marketing_writes_ads as _marketing_writes_ads  # noqa: E402,F401
+from tiktok_mcp.tools import posting_writes_drafts as _posting_writes_drafts  # noqa: E402,F401
 from tiktok_mcp.tools import (  # noqa: E402,F401
     marketing_writes_audiences as _marketing_writes_audiences,
 )
