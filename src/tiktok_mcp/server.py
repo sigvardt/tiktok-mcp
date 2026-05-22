@@ -16,26 +16,32 @@ from mcp.server.fastmcp import FastMCP
 from tiktok_mcp import __version__
 
 app: FastMCP = FastMCP("tiktok-mcp")
+if __name__ == "__main__":
+    sys.modules["tiktok_mcp.server"] = sys.modules[__name__]
 from tiktok_mcp.prompts import templates as _prompts_templates  # noqa: E402,F401
+from tiktok_mcp.resources import accounts as _resources_accounts  # noqa: E402,F401
 from tiktok_mcp.tools import accounts as _accounts  # noqa: E402,F401
 from tiktok_mcp.tools import app_credentials as _app_credentials  # noqa: E402,F401
 from tiktok_mcp.tools import comments_read as _comments_read  # noqa: E402,F401
+from tiktok_mcp.tools import comments_writes as _comments_writes  # noqa: E402,F401
 from tiktok_mcp.tools import display_read as _display_read  # noqa: E402,F401
 from tiktok_mcp.tools import marketing_read as _marketing_read  # noqa: E402,F401
 from tiktok_mcp.tools import marketing_reports as _marketing_reports  # noqa: E402,F401
-from tiktok_mcp.tools import marketing_writes_creatives as _marketing_writes_creatives  # noqa: E402,F401
 from tiktok_mcp.tools import (  # noqa: E402,F401
     marketing_writes_adgroups as _marketing_writes_adgroups,
 )
 from tiktok_mcp.tools import marketing_writes_ads as _marketing_writes_ads  # noqa: E402,F401
-from tiktok_mcp.tools import posting_writes_drafts as _posting_writes_drafts  # noqa: E402,F401
 from tiktok_mcp.tools import (  # noqa: E402,F401
     marketing_writes_audiences as _marketing_writes_audiences,
 )
 from tiktok_mcp.tools import (  # noqa: E402,F401
     marketing_writes_campaigns as _marketing_writes_campaigns,
 )
+from tiktok_mcp.tools import (  # noqa: E402,F401
+    marketing_writes_creatives as _marketing_writes_creatives,
+)
 from tiktok_mcp.tools import posting_read as _posting_read  # noqa: E402,F401
+from tiktok_mcp.tools import posting_writes_drafts as _posting_writes_drafts  # noqa: E402,F401
 from tiktok_mcp.tools import (  # noqa: E402,F401
     posting_writes_pull_and_photo as _posting_writes_pull_and_photo,
 )
