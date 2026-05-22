@@ -36,11 +36,11 @@ from tiktok_mcp.types.errors import (
 
 AD_GET_PATH = "/open_api/v1.3/ad/get/"
 ADGROUP_GET_PATH = "/open_api/v1.3/adgroup/get/"
-ADVERTISER_GET_PATH = "/open_api/v1.3/oauth2/advertiser/get/"
 ADVERTISER_INFO_PATH = "/open_api/v1.3/advertiser/info/"
 BC_ADVERTISER_GET_PATH = "/open_api/v1.3/bc/asset/get/"
 BC_GET_PATH = "/open_api/v1.3/bc/get/"
 CAMPAIGN_GET_PATH = "/open_api/v1.3/campaign/get/"
+USER_INFO_PATH = "/open_api/v1.3/user/info/"
 
 ACCOUNT_KEY_RE = re.compile(
     r"^tiktok-mcp::marketing::(?P<mode>sandbox|production)::"
@@ -53,10 +53,26 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 
 @app.tool(annotations=ToolAnnotations(readOnlyHint=True))
 @mark_read_only
-async def marketing_list_advertisers(alias: str) -> list[Advertiser]:
-    async with await _marketing_client(alias) as client:
-        payload = await client.request("GET", ADVERTISER_GET_PATH)
-    return _models_from_payload(payload, Advertiser, "list", "advertisers", "advertiser_list")
+async def marketing_list_advertisers(alias: str) -> dict[str, Any]:
+    """Return OAuth-time advertiser discovery or a documented access-token limitation."""
+    backend = await get_backend()
+    account, tokens = await _load_marketing_account(backend, alias)
+    app_credentials = await _load_app_credentials(backend, account)
+    advertiser_id = _stored_advertiser_id(account)
+    async with _build_business_client(account, app_credentials, tokens, backend) as client:
+        if advertiser_id is not None:
+            params = {"advertiser_ids": _json_array([advertiser_id])}
+            payload = await client.request("GET", ADVERTISER_INFO_PATH, params=params)
+            return {
+                "advertisers": _list_from_payload(
+                    payload,
+                    "list",
+                    "advertisers",
+                    "advertiser_info",
+                )
+            }
+        user_payload = await client.request("GET", USER_INFO_PATH)
+    return _advertiser_discovery_not_supported(user_payload)
 
 
 @app.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -278,6 +294,29 @@ def _models_from_payload(
     *candidate_keys: str,
 ) -> list[ModelT]:
     return [model.model_validate(item) for item in _list_from_payload(payload, *candidate_keys)]
+
+
+def _stored_advertiser_id(account: Account) -> str | None:
+    if account.tiktok_id.endswith("-unknown"):
+        return None
+    return account.tiktok_id
+
+
+def _advertiser_discovery_not_supported(payload: object) -> dict[str, Any]:
+    user_info = _raw_payload(payload)
+    return {
+        "endpoint_not_supported_for_this_token_type": True,
+        "reason": (
+            "TikTok does not expose an access-token-only endpoint for listing authorized "
+            "Marketing advertisers at runtime. Store advertiser_ids from the OAuth token "
+            "response, or call marketing_get_advertiser_info with a known advertiser_id."
+        ),
+        "advertisers": [],
+        "user": {
+            "core_user_id": user_info.get("core_user_id"),
+            "display_name": user_info.get("display_name"),
+        },
+    }
 
 
 def _model_from_payload(payload: object, model: type[ModelT], *candidate_keys: str) -> ModelT:

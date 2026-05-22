@@ -24,7 +24,6 @@ from tiktok_mcp.tools import marketing_read as marketing_read_tools
 from tiktok_mcp.tools.marketing_read import (
     AD_GET_PATH,
     ADGROUP_GET_PATH,
-    ADVERTISER_GET_PATH,
     ADVERTISER_INFO_PATH,
     BC_ADVERTISER_GET_PATH,
     BC_GET_PATH,
@@ -89,7 +88,8 @@ async def test_list_advertisers_returns_models_and_uses_access_token(
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen_requests.append(request)
-        assert request.url.path == ADVERTISER_GET_PATH
+        assert request.url.path == ADVERTISER_INFO_PATH
+        assert request.url.params["advertiser_ids"] == '["marketing-demo-tiktok-id"]'
         return _business_response(
             request,
             {"list": [{"advertiser_id": "adv-1", "advertiser_name": "Demo Advertiser"}]},
@@ -97,9 +97,11 @@ async def test_list_advertisers_returns_models_and_uses_access_token(
 
     _install_client(monkeypatch, backend, handler)
 
-    advertisers = await marketing_list_advertisers(ALIAS)
+    result = await marketing_list_advertisers(ALIAS)
 
-    assert advertisers == [Advertiser(advertiser_id="adv-1", advertiser_name="Demo Advertiser")]
+    assert result == {
+        "advertisers": [{"advertiser_id": "adv-1", "advertiser_name": "Demo Advertiser"}]
+    }
     assert seen_requests[0].headers["Access-Token"] == "marketing-access"
     assert "authorization" not in seen_requests[0].headers
 
