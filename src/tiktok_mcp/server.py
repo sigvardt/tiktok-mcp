@@ -17,6 +17,7 @@ app: FastMCP = FastMCP("tiktok-mcp")
 from tiktok_mcp.tools import accounts as _accounts  # noqa: E402,F401
 from tiktok_mcp.tools import app_credentials as _app_credentials  # noqa: E402,F401
 from tiktok_mcp.tools import display_read as _display_read  # noqa: E402,F401
+from tiktok_mcp.tools import marketing_read as _marketing_read  # noqa: E402,F401
 from tiktok_mcp.tools import posting_read as _posting_read  # noqa: E402,F401
 from tiktok_mcp.tools import rate_limit as _rate_limit  # noqa: E402,F401
 
