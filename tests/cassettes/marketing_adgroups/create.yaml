@@ -1,0 +1,22 @@
+interactions:
+- request:
+    body: '{"advertiser_id":"advertiser-123","campaign_id":"campaign-456","adgroup_name":"Nordic Prospecting","placement_type":"PLACEMENT_TYPE_AUTOMATIC","schedule_type":"SCHEDULE_START_END","billing_event":"CPC","optimization_goal":"CLICK","bid_type":"BID_TYPE_CUSTOM","budget":100.0,"targeting":{"locations":["NO","SE"],"age_groups":["AGE_25_34"]},"bid_price":2.5,"audience_ids":["audience-1"]}'
+    headers:
+      Access-Token:
+      - REDACTED
+      Content-Type:
+      - application/json
+    method: POST
+    uri: https://business-api.tiktok.com/open_api/v1.3/adgroup/create/
+  response:
+    body:
+      string: '{"code":0,"message":"OK","request_id":"req-adgroup-create","data":{"adgroup_id":"adgroup-789","status":"ENABLE","modify_time":"2026-05-22T12:00:00Z"}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-adgroup-create
+    status:
+      code: 200
+      message: OK
+version: 1

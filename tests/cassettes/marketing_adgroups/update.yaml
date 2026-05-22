@@ -1,0 +1,22 @@
+interactions:
+- request:
+    body: '{"advertiser_id":"advertiser-123","adgroup_id":"adgroup-789","adgroup_name":"Nordic Retargeting","budget":150.0,"targeting":{"locations":["DK","FI"]}}'
+    headers:
+      Access-Token:
+      - REDACTED
+      Content-Type:
+      - application/json
+    method: POST
+    uri: https://business-api.tiktok.com/open_api/v1.3/adgroup/update/
+  response:
+    body:
+      string: '{"code":0,"message":"OK","request_id":"req-adgroup-update","data":{"adgroup_id":"adgroup-789","modify_time":"2026-05-22T12:01:00Z"}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-adgroup-update
+    status:
+      code: 200
+      message: OK
+version: 1

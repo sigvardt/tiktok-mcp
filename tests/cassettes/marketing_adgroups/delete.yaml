@@ -1,0 +1,22 @@
+interactions:
+- request:
+    body: '{"advertiser_id":"advertiser-123","adgroup_ids":["adgroup-1","adgroup-2"]}'
+    headers:
+      Access-Token:
+      - REDACTED
+      Content-Type:
+      - application/json
+    method: POST
+    uri: https://business-api.tiktok.com/open_api/v1.3/adgroup/delete/
+  response:
+    body:
+      string: '{"code":0,"message":"OK","request_id":"req-adgroup-delete","data":{"success_count":2,"operation_status":"DELETE","adgroup_ids":["adgroup-1","adgroup-2"]}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-adgroup-delete
+    status:
+      code: 200
+      message: OK
+version: 1
