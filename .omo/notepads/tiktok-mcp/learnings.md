@@ -164,3 +164,8 @@ mangled in transit. The session context provides the canonical value.
 - Audience upload path validation rejects network URLs, raw `..` segments, non-files, files outside both `Path.home()` and `Path.cwd()`, and files over 100MB before constructing the Business API client, so invalid-path tests make zero outbound HTTP.
 - Audience upload INFO logging should stay to structured metadata only: `filename_hash`, `row_count_estimate`, and `file_size_bytes`; tests assert fixture plaintext emails never appear in caplog or multipart bodies.
 
+## [2026-05-22T13:55:54Z] Task: T26
+
+- FILE_UPLOAD keeps upload session metadata in-memory by `publish_id` only so `upload_video_chunk` can compute exact `Content-Range` without persisting draft state across MCP restarts.
+- Chunk PUTs use `PostingAPIClient.put_chunk_to_url(...)`, which retries exactly once after a 401 by reusing the Content Posting atomic refresh-token rotation path; the keychain lock is held only for the refresh/write, not the upload body transfer.
+- Draft upload init intentionally sends only `source_info` with `source: FILE_UPLOAD`; no `post_info` is emitted, keeping Content Posting uploads in TikTok's draft inbox by default.

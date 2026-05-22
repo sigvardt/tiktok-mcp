@@ -1,0 +1,53 @@
+interactions:
+- request:
+    method: POST
+    uri: https://open.tiktokapis.com/v2/post/publish/inbox/video/init/
+    headers:
+      Authorization:
+      - REDACTED
+    body:
+      string: '{"source_info":{"source":"FILE_UPLOAD","video_size":8388608,"chunk_size":8388608,"total_chunk_count":1}}'
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{"data":{"publish_id":"publish-8mb","upload_url":"https://upload.example.test/upload/chunk"}}'
+- request:
+    method: PUT
+    uri: https://upload.example.test/upload/chunk
+    headers:
+      Authorization:
+      - REDACTED
+      Content-Range:
+      - bytes 0-8388607/8388608
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{}'
+- request:
+    method: POST
+    uri: https://open.tiktokapis.com/v2/post/publish/status/fetch/
+    headers:
+      Authorization:
+      - REDACTED
+    body:
+      string: '{"publish_id":"publish-8mb"}'
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{"data":{"status":"PUBLISH_COMPLETE","uploaded_bytes":8388608,"video_seconds":3,"publicaly_available_post_id":null,"fail_reason":null}}'
+version: 1

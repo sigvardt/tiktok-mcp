@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import cast
+from urllib.parse import urlparse
 
 import httpx
 from pydantic import SecretStr, ValidationError
@@ -141,6 +142,37 @@ class PostingAPIClient:
         response = await self._post_authenticated(alias, path, json_body=json_body)
         return cast(dict[str, object], decode_display_response(response))
 
+    async def put_chunk_to_url(
+        self,
+        alias: str,
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        content: bytes,
+    ) -> httpx.Response:
+        _account, tokens = await self._load_fresh_tokens(alias)
+        access_token = tokens.access_token.get_secret_value()
+        add_runtime_token(access_token, "access_token")
+        response = await self._put_chunk_once(
+            alias,
+            url,
+            headers=_chunk_headers(headers, access_token),
+            content=content,
+        )
+        if response.status_code != 401:
+            await self._raise_for_chunk_upload(alias, response)
+            return response
+
+        refreshed_access_token = await self._refresh_after_unauthorized(alias, access_token)
+        response = await self._put_chunk_once(
+            alias,
+            url,
+            headers=_chunk_headers(headers, refreshed_access_token),
+            content=content,
+        )
+        await self._raise_for_chunk_upload(alias, response)
+        return response
+
     async def _post_authenticated(
         self,
         alias: str,
@@ -196,6 +228,30 @@ class PostingAPIClient:
             _register_tokens(tokens)
             return account, tokens
         raise AccountNotFoundError(alias, api_type=ApiType.CONTENT_POSTING.value)
+
+    async def _refresh_after_unauthorized(
+        self,
+        alias: str,
+        invalid_access_token: str,
+    ) -> str:
+        account, _tokens = await self._load_account(alias)
+        lock = await _refresh_lock(account)
+        async with lock:
+            account, tokens = await self._load_account(alias)
+            current_access_token = tokens.access_token.get_secret_value()
+            if current_access_token != invalid_access_token:
+                return current_access_token
+            refreshed_tokens = await self._refresh_tokens(account, tokens)
+            backend = await self._get_backend()
+            await atomic_account_update(
+                backend,
+                account.api_type,
+                account.sandbox,
+                account.alias,
+                account,
+                refreshed_tokens,
+            )
+            return refreshed_tokens.access_token.get_secret_value()
 
     async def _refresh_tokens(self, account: Account, tokens: AccountTokens) -> AccountTokens:
         credentials = await self._load_app_credentials(account.sandbox)
@@ -311,6 +367,36 @@ class PostingAPIClient:
             )
         return response
 
+    async def _put_chunk_once(
+        self,
+        alias: str,
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        content: bytes,
+    ) -> httpx.Response:
+        await record_request(ApiType.CONTENT_POSTING, alias)
+        try:
+            return await self._client().put(url, headers=dict(headers), content=content)
+        except httpx.HTTPError as exc:
+            raise SanitizedHttpxError(status=0, url_path=_url_path(url)) from exc
+
+    async def _raise_for_chunk_upload(self, alias: str, response: httpx.Response) -> None:
+        if response.status_code == 429:
+            retry_after_seconds = _retry_after_seconds(_header(response, "Retry-After"))
+            await record_429(ApiType.CONTENT_POSTING, alias, retry_after_seconds)
+            raise RateLimitedError(
+                retry_after=retry_after_seconds,
+                attempts=1,
+                context={"endpoint": response.request.url.path},
+            )
+        if response.status_code >= 400:
+            raise SanitizedHttpxError(
+                status=response.status_code,
+                url_path=response.request.url.path,
+                request_id=_request_id(response),
+            )
+
     def _client(self) -> httpx.AsyncClient:
         if self._http_client is None:
             self._http_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS)
@@ -388,6 +474,12 @@ def _register_tokens(tokens: AccountTokens) -> None:
     add_runtime_token(tokens.refresh_token.get_secret_value(), "refresh_token")
 
 
+def _chunk_headers(headers: Mapping[str, str], access_token: str) -> dict[str, str]:
+    prepared_headers = dict(headers)
+    prepared_headers["Authorization"] = f"Bearer {access_token}"
+    return prepared_headers
+
+
 def _retry_wait(retry_state: RetryCallState) -> float:
     outcome = retry_state.outcome
     if outcome is not None and outcome.failed:
@@ -452,6 +544,11 @@ def _request_id(response: httpx.Response) -> str | None:
 
 def _header(response: httpx.Response, name: str) -> str | None:
     return cast(str | None, response.headers.get(name))
+
+
+def _url_path(url: str) -> str:
+    path = urlparse(url).path
+    return path or url
 
 
 def _int_value(payload: Mapping[str, object], key: str) -> int:

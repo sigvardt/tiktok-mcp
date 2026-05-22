@@ -1,0 +1,53 @@
+interactions:
+- request:
+    method: PUT
+    uri: https://upload.example.test/upload/chunk
+    headers:
+      Authorization:
+      - REDACTED
+      Content-Range:
+      - bytes 0-5242879/5242880
+  response:
+    status:
+      code: 401
+      message: Unauthorized
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{}'
+- request:
+    method: POST
+    uri: https://open.tiktokapis.com/v2/oauth/token/
+    headers:
+      Authorization:
+      - REDACTED
+    body:
+      string: client_key=posting-client-id&client_secret=posting-client-secret&grant_type=refresh_token&refresh_token=posting-refresh
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{"access_token":"cassette-fresh-access","refresh_token":"cassette-fresh-refresh","expires_in":3600,"refresh_expires_in":7200}'
+- request:
+    method: PUT
+    uri: https://upload.example.test/upload/chunk
+    headers:
+      Authorization:
+      - REDACTED
+      Content-Range:
+      - bytes 0-5242879/5242880
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{}'
+version: 1

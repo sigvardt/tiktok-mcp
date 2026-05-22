@@ -2475,7 +2475,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `feat(comments): comment moderation write tools (per-API gated, PII-safe)` — `src/tiktok_mcp/tools/comments_writes.py`, `tests/unit/test_comments_writes.py`, `tests/integration/test_comments_writes_replay.py`, `tests/cassettes/comments_writes/*.yaml`
 
-- [ ] 26. Content Posting API: chunked video upload (FILE_UPLOAD)
+- [x] 26. Content Posting API: chunked video upload (FILE_UPLOAD)
 
   **What to do**:
   - `tools/posting_writes_video_upload.py` exposing 3 tools forming the FILE_UPLOAD flow:

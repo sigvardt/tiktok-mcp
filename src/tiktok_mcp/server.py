@@ -34,6 +34,7 @@ from tiktok_mcp.tools import (  # noqa: E402,F401
     marketing_writes_campaigns as _marketing_writes_campaigns,
 )
 from tiktok_mcp.tools import posting_read as _posting_read  # noqa: E402,F401
+from tiktok_mcp.tools import posting_writes_video_upload as _posting_video_upload  # noqa: E402,F401
 from tiktok_mcp.tools import rate_limit as _rate_limit  # noqa: E402,F401
 
 
