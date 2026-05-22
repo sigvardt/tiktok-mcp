@@ -1,0 +1,38 @@
+interactions:
+- request:
+    body: '{"publish_id":"v_inbox_url~v2.cancel"}'
+    headers:
+      Authorization:
+      - REDACTED
+    method: POST
+    uri: https://open.tiktokapis.com/v2/post/publish/status/fetch/
+  response:
+    body:
+      string: '{"data":{"publish_id":"v_inbox_url~v2.cancel","status":"PROCESSING_UPLOAD"}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-posting-cancel-status
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"publish_id":"v_inbox_url~v2.cancel"}'
+    headers:
+      Authorization:
+      - REDACTED
+    method: POST
+    uri: https://open.tiktokapis.com/v2/post/publish/cancel/
+  response:
+    body:
+      string: '{"data":{"cancelled":true}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-posting-cancel
+    status:
+      code: 200
+      message: OK
+version: 1

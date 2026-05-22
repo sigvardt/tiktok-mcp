@@ -1,0 +1,20 @@
+interactions:
+- request:
+    body: '{"media_type":"PHOTO","post_mode":"MEDIA_UPLOAD","source_info":{"source":"PULL_FROM_URL","photo_images":{"image_urls":["https://example.com/photo-1.webp","https://example.com/photo-2.webp","https://example.com/photo-3.webp"]}}}'
+    headers:
+      Authorization:
+      - REDACTED
+    method: POST
+    uri: https://open.tiktokapis.com/v2/post/publish/content/init/
+  response:
+    body:
+      string: '{"data":{"publish_id":"p_photo_url~v2.456"}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-posting-photo-carousel
+    status:
+      code: 200
+      message: OK
+version: 1

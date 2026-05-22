@@ -1,0 +1,38 @@
+interactions:
+- request:
+    body: '{"source_info":{"source":"PULL_FROM_URL","video_url":"https://example.com/sample.mp4"}}'
+    headers:
+      Authorization:
+      - REDACTED
+    method: POST
+    uri: https://open.tiktokapis.com/v2/post/publish/inbox/video/init/
+  response:
+    body:
+      string: '{"data":{"publish_id":"v_inbox_url~v2.123"}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-posting-pull-draft
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"publish_id":"v_inbox_url~v2.123"}'
+    headers:
+      Authorization:
+      - REDACTED
+    method: POST
+    uri: https://open.tiktokapis.com/v2/post/publish/status/fetch/
+  response:
+    body:
+      string: '{"data":{"publish_id":"v_inbox_url~v2.123","status":"FETCH_IN_PROGRESS"}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-posting-pull-status
+    status:
+      code: 200
+      message: OK
+version: 1

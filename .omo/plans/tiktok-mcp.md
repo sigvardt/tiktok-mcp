@@ -2549,7 +2549,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `feat(posting): chunked video upload tools (drafts default, refresh-aware)` — `src/tiktok_mcp/tools/posting_writes_video_upload.py`, `src/tiktok_mcp/posting/chunker.py`, `tests/unit/test_video_upload_writes.py`, `tests/integration/test_video_upload_replay.py`, fixtures, cassettes
 
-- [ ] 27. Content Posting API: PULL_FROM_URL + photo uploads + direct post opt-in
+- [x] 27. Content Posting API: PULL_FROM_URL + photo uploads + direct post opt-in
 
   **What to do**:
   - `tools/posting_writes_pull_and_photo.py` exposing:

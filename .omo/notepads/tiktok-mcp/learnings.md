@@ -176,3 +176,9 @@ mangled in transit. The session context provides the canonical value.
 - Video creative uploads stream 5MB-64MB chunks through `chunk_file()`. The 8MB replay fixture must produce at least two multipart POSTs, while dedup responses with an existing `video_id` stop the upload immediately.
 - Multipart creative upload support is isolated in `tools/marketing_writes_creatives.py` on top of `BusinessAPIClient` auth/header handling so the shared client surface stays stable while parallel write-tool tasks land.
 
+
+## 2026-05-22T00:00:00Z Task: T27
+
+- Content Posting PULL_FROM_URL writes keep drafts as the default: video draft init uses `/v2/post/publish/inbox/video/init/` with `source_info.source=PULL_FROM_URL` and no `post_info`; direct video posts require explicit `publish_immediately=True` plus validated `post_info.title` and `post_info.privacy_level` before hitting `/v2/post/publish/video/init/`.
+- Photo URL uploads are static carousel/photo posts, not the deferred v0.2 interactive slideshow feature. T27 validates 1-35 HTTPS-only URLs and sends them as `source_info.photo_images.image_urls` through `/v2/post/publish/content/init/` with `post_mode=MEDIA_UPLOAD` unless direct posting is explicitly requested.
+- T27 `get_publish_status(publish_id)` and `cancel_publish(publish_id)` use an in-memory publish_id-to-alias cache populated by the upload tools for the short polling window only; older publishes should use the existing `posting_get_post_status(alias, publish_id)` tool.
