@@ -5,8 +5,6 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .server import app, main
-
 
 def _read_version() -> str:
     try:
@@ -19,6 +17,8 @@ def _read_version() -> str:
         return generated_version
 
 
-__version__ = _read_version()
+__version__: str = _read_version()
+
+from .server import app, main  # noqa: E402
 
 __all__ = ["__version__", "app", "main"]

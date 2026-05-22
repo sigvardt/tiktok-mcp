@@ -1,6 +1,7 @@
 # pyright: reportImportCycles=false, reportMissingTypeStubs=false
 # pyright: reportUnusedCallResult=false
 # pyright: reportAttributeAccessIssue=false, reportUnknownVariableType=false
+# pyright: reportPrivateUsage=false
 """Stdio MCP server entry point for tiktok-mcp."""
 
 from __future__ import annotations
@@ -9,7 +10,10 @@ import sys
 
 from mcp.server.fastmcp import FastMCP
 
+from tiktok_mcp import __version__
+
 app: FastMCP = FastMCP("tiktok-mcp")
+app._mcp_server.version = __version__
 if __name__ == "__main__":
     sys.modules["tiktok_mcp.server"] = sys.modules[__name__]
 
