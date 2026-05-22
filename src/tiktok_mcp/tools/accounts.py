@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import json
 import re
@@ -117,7 +116,7 @@ async def add_account(
     if not _valid_alias(suggested_alias):
         return _invalid_alias_error(suggested_alias)
 
-    pkce_verifier = None
+    pkce_verifier = _new_pkce_verifier() if api_type in PKCE_APIS else None
     oauth_state = await state.create_state(
         api_type,
         suggested_alias,
@@ -821,7 +820,7 @@ def _invalid_alias_error(alias: str) -> dict[str, str]:
 
 
 def _generate_alias(api_type: ApiType) -> str:
-    return f"nordic-{_api_short_name(api_type)}-{secrets.token_urlsafe(3).lower()}"
+    return f"nordic-{_api_short_name(api_type)}-{secrets.token_hex(3)}"
 
 
 def _api_short_name(api_type: ApiType) -> str:
@@ -838,8 +837,11 @@ def _valid_alias(alias: str) -> bool:
 
 
 def _build_pkce_challenge(code_verifier: str) -> str:
-    digest = hashlib.sha256(code_verifier.encode()).digest()
-    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    return hashlib.sha256(code_verifier.encode("ascii")).hexdigest()
+
+
+def _new_pkce_verifier() -> str:
+    return secrets.token_urlsafe(32)
 
 
 def _pending_or_new(pending_key: str, now: datetime) -> tuple[str, datetime]:

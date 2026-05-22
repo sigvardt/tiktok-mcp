@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import urllib.parse
 from collections.abc import Callable, Iterator
@@ -119,7 +120,8 @@ async def test_add_account_returns_url_with_state_and_alias(
     assert parsed_url.geturl().startswith("https://www.tiktok.com/v2/auth/authorize/")
     assert params["state"] == [response["state"]]
     assert params["redirect_uri"] == [REDIRECT_URI]
-    assert "code_challenge" not in params
+    assert params["code_challenge_method"] == ["S256"]
+    assert "code_challenge" in params
 
 
 @pytest.mark.asyncio
@@ -146,6 +148,26 @@ async def test_add_account_sandbox_loads_sandbox_creds(
     params = urllib.parse.parse_qs(parsed_url.query)
     assert params["client_key"] == ["sandbox-client-id"]
     assert params["state"] == [response["state"]]
+
+
+@pytest.mark.asyncio
+async def test_add_account_uses_tiktok_hex_pkce_challenge(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = allow_account_changes
+    pkce_verifier = "A" * 43
+    await _store_app_credentials(backend, ApiType.DISPLAY)
+    monkeypatch.setattr(accounts_module, "_new_pkce_verifier", lambda: pkce_verifier)
+
+    response = await add_account(ApiType.DISPLAY, alias="nordic-display-pkce")
+
+    parsed_url = urllib.parse.urlparse(response["url"])
+    params = urllib.parse.parse_qs(parsed_url.query)
+    assert len(pkce_verifier) == 43
+    assert params["code_challenge"] == [hashlib.sha256(pkce_verifier.encode("ascii")).hexdigest()]
+    assert params["code_challenge_method"] == ["S256"]
 
 
 @pytest.mark.asyncio
@@ -273,7 +295,7 @@ async def test_oauth_pkce_token_exchange_success(
 
 
 @pytest.mark.asyncio
-async def test_oauth_error_surfaced(
+async def test_oauth_error_envelope_surfaced(
     backend: KeyringBackend,
     allow_account_changes: None,
     monkeypatch: pytest.MonkeyPatch,
