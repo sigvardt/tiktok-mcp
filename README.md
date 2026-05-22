@@ -1,3 +1,4 @@
+![CI](https://github.com/signikant/tiktok-mcp/actions/workflows/ci.yml/badge.svg)
 <!-- markdownlint-disable MD013 MD034 -->
 
 # tiktok-mcp

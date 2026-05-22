@@ -1,0 +1,72 @@
+name: CI
+
+on: { push: {}, pull_request: { branches: [main] } }
+
+concurrency: { group: "${{ github.workflow }}-${{ github.ref }}", cancel-in-progress: true }
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - run: uv sync --all-extras
+      - run: uv run ruff check src/ tests/
+      - run: uv run ruff format --check src/ tests/
+      - run: uv run mypy --strict src/
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --all-extras
+      - run: uv run pytest tests/unit/ tests/integration/ tests/lint/ -q --tb=short
+
+  smoke:
+    needs: test
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv build
+      - shell: bash
+        run: uvx --from ./dist/*.whl tiktok-mcp --version
+      - run: python tests/docs/validate_readme_json.py
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+      - run: python tests/docs/validate_mermaid.py docs/
+      - run: npx --yes markdownlint-cli README.md docs/
+      - run: python tests/docs/check_links.py README.md docs/release.md
+      - run: python tests/docs/validate_security_matrix.py
