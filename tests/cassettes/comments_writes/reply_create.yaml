@@ -1,0 +1,20 @@
+interactions:
+- request:
+    body: '{"business_id":"business-123","account_id":"account-456","comment_id":"comment-001","comment_text":"[SCRUBBED]"}'
+    headers:
+      Access-Token:
+      - REDACTED
+    method: POST
+    uri: https://business-api.tiktok.com/open_api/v1.3/business/comment/reply/create/
+  response:
+    body:
+      string: '{"code":0,"message":"OK","request_id":"req-comment-reply-create","data":{"request_id":"req-comment-reply-create","reply_id":"reply-001","comment_id":"comment-001","text":"[SCRUBBED]"}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-comment-reply-create
+    status:
+      code: 200
+      message: OK
+version: 1

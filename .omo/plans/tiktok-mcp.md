@@ -2394,7 +2394,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `feat(marketing): creative library upload tools` — `src/tiktok_mcp/tools/marketing_writes_creatives.py`, chunking helper, tests, fixtures, cassettes
 
-- [ ] 25. Business Organic API: comment moderation write tools
+- [x] 25. Business Organic API: comment moderation write tools
 
   **What to do**:
   - `tools/comments_writes.py` exposing 6 tools: `post_comment_reply`, `pin_comment`, `unpin_comment`, `hide_comment`, `unhide_comment`, `delete_own_reply`.

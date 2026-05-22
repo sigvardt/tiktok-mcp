@@ -144,3 +144,12 @@ mangled in transit. The session context provides the canonical value.
 - AdGroup write tools keep request models inline in `marketing_writes_adgroups.py`; do not extend shared Marketing models for this Wave-3 surface.
 - Nordic geo validation is enforced by the nested Pydantic targeting block before `BusinessAPIClient` construction, so invalid `targeting.locations` values produce a `validation_error` envelope and fire zero HTTP requests.
 - Replay tests use vcrpy-format cassettes under `tests/cassettes/marketing_adgroups/` and explicitly scrub `Access-Token`, while runtime write calls still go only through `BusinessAPIClient.request`.
+
+## [2026-05-22 15:52] Task: T25
+
+- Comment write tools use only the verified Business Organic endpoint family `/open_api/v1.3/business/comment/...` for reply create, pin/unpin, hide/unhide, and own-reply delete.
+- `@require_writes_enabled("comments")` is the literal per-API gate for all six moderation writes; `TIKTOK_MCP_ALLOW_WRITES=marketing` must still block them while `comments` and `all` allow them.
+- Reply text validation happens before client construction or HTTP: `len()` must be at most 150, surrogate code points are rejected, and the accepted body is NFC-normalized.
+- Reply/comment text must stay out of INFO/WARN logs and committed cassettes. Opt-in DEBUG logging is still gated by `TIKTOK_MCP_LOG_COMMENT_BODIES=1`, and write cassettes scrub both response and request `text`/`comment_text` fields.
+- v0.1 keeps comment/account ownership validation as a pre-HTTP hook because T17 shipped list/reply-list only and no single-comment lookup endpoint; replace the hook with a live lookup if TikTok exposes one later.
+
