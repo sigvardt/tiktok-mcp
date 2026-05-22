@@ -1,11 +1,7 @@
 # pyright: reportImportCycles=false, reportMissingTypeStubs=false
-# pyright: reportUnusedImport=false, reportUnusedCallResult=false
+# pyright: reportUnusedCallResult=false
 # pyright: reportAttributeAccessIssue=false, reportUnknownVariableType=false
-"""Stdio MCP server entry point for tiktok-mcp.
-
-Wave 1 T2 produces this as a minimal skeleton. Subsequent Wave 1+ tasks
-populate tools, resources, and prompts before app.run() returns control.
-"""
+"""Stdio MCP server entry point for tiktok-mcp."""
 
 from __future__ import annotations
 
@@ -13,47 +9,73 @@ import sys
 
 from mcp.server.fastmcp import FastMCP
 
-from tiktok_mcp import __version__
-
 app: FastMCP = FastMCP("tiktok-mcp")
 if __name__ == "__main__":
     sys.modules["tiktok_mcp.server"] = sys.modules[__name__]
-from tiktok_mcp.prompts import templates as _prompts_templates  # noqa: E402,F401
-from tiktok_mcp.resources import accounts as _resources_accounts  # noqa: E402,F401
-from tiktok_mcp.tools import accounts as _accounts  # noqa: E402,F401
-from tiktok_mcp.tools import app_credentials as _app_credentials  # noqa: E402,F401
-from tiktok_mcp.tools import comments_read as _comments_read  # noqa: E402,F401
-from tiktok_mcp.tools import comments_writes as _comments_writes  # noqa: E402,F401
-from tiktok_mcp.tools import display_read as _display_read  # noqa: E402,F401
-from tiktok_mcp.tools import marketing_read as _marketing_read  # noqa: E402,F401
-from tiktok_mcp.tools import marketing_reports as _marketing_reports  # noqa: E402,F401
-from tiktok_mcp.tools import (  # noqa: E402,F401
-    marketing_writes_adgroups as _marketing_writes_adgroups,
-)
-from tiktok_mcp.tools import marketing_writes_ads as _marketing_writes_ads  # noqa: E402,F401
-from tiktok_mcp.tools import (  # noqa: E402,F401
-    marketing_writes_audiences as _marketing_writes_audiences,
-)
-from tiktok_mcp.tools import (  # noqa: E402,F401
-    marketing_writes_campaigns as _marketing_writes_campaigns,
-)
-from tiktok_mcp.tools import (  # noqa: E402,F401
-    marketing_writes_creatives as _marketing_writes_creatives,
-)
-from tiktok_mcp.tools import posting_read as _posting_read  # noqa: E402,F401
-from tiktok_mcp.tools import posting_writes_drafts as _posting_writes_drafts  # noqa: E402,F401
-from tiktok_mcp.tools import (  # noqa: E402,F401
-    posting_writes_pull_and_photo as _posting_writes_pull_and_photo,
-)
-from tiktok_mcp.tools import posting_writes_video_upload as _posting_video_upload  # noqa: E402,F401
-from tiktok_mcp.tools import rate_limit as _rate_limit  # noqa: E402,F401
+
+_components_registered = False
+
+
+def _register_components() -> None:
+    global _components_registered
+    if _components_registered:
+        return
+
+    from tiktok_mcp.prompts import templates as prompts_templates
+    from tiktok_mcp.resources import accounts as resources_accounts
+    from tiktok_mcp.tools import accounts as tools_accounts
+    from tiktok_mcp.tools import (
+        app_credentials,
+        comments_read,
+        comments_writes,
+        display_read,
+        marketing_read,
+        marketing_reports,
+        marketing_writes_adgroups,
+        marketing_writes_ads,
+        marketing_writes_audiences,
+        marketing_writes_campaigns,
+        marketing_writes_creatives,
+        posting_read,
+        posting_writes_drafts,
+        posting_writes_pull_and_photo,
+        posting_writes_video_upload,
+        rate_limit,
+    )
+
+    _ = (
+        prompts_templates,
+        resources_accounts,
+        tools_accounts,
+        app_credentials,
+        comments_read,
+        comments_writes,
+        display_read,
+        marketing_read,
+        marketing_reports,
+        marketing_writes_adgroups,
+        marketing_writes_ads,
+        marketing_writes_audiences,
+        marketing_writes_campaigns,
+        marketing_writes_creatives,
+        posting_read,
+        posting_writes_drafts,
+        posting_writes_pull_and_photo,
+        posting_writes_video_upload,
+        rate_limit,
+    )
+    _components_registered = True
 
 
 def main() -> None:
-    """Entry point invoked by `tiktok-mcp` console script."""
-    if len(sys.argv) > 1 and sys.argv[1] in {"--version", "-V"}:
+    """Launch the TikTok MCP server over stdio."""
+    if "--version" in sys.argv[1:]:
+        from tiktok_mcp import __version__
+
         sys.stdout.write(f"tiktok-mcp {__version__}\n")
         return
+
+    _register_components()
     app.run(transport="stdio")
 
 
