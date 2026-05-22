@@ -30,8 +30,8 @@ from tiktok_mcp.types.errors import (
     AppCredentialsNotSetError,
 )
 
-COMMENT_LIST_PATH = "/open_api/v1.3/comment/list/"
-COMMENT_REPLY_LIST_PATH = "/open_api/v1.3/comment/reply/list/"
+COMMENT_LIST_PATH = "/open_api/v1.3/business/comment/list/"
+COMMENT_REPLY_LIST_PATH = "/open_api/v1.3/business/comment/reply/list/"
 COMMENT_BODY_LOG_ENV = "TIKTOK_MCP_LOG_COMMENT_BODIES"
 
 QueryParams = Mapping[str, str | int | float | bool | None]
