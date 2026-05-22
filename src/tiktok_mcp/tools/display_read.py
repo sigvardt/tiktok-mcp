@@ -1,0 +1,382 @@
+"""MCP tools for TikTok Display API reads and token utilities."""
+
+from __future__ import annotations
+
+# pyright: reportMissingTypeStubs=false, reportPrivateUsage=false, reportAny=false
+# pyright: reportUnknownArgumentType=false, reportUnknownVariableType=false
+# pyright: reportUnusedCallResult=false
+import json
+from collections.abc import Mapping, Sequence
+from datetime import datetime
+from typing import cast
+
+from mcp.types import ToolAnnotations
+from pydantic import ValidationError
+
+from tiktok_mcp.api.display.client import DisplayAPIClient
+from tiktok_mcp.api.display.models import UserInfo, Video, VideoMetrics
+from tiktok_mcp.auth.keychain import (
+    app_creds_key,
+    atomic_account_update,
+    deserialize_account_record,
+    get_backend,
+)
+from tiktok_mcp.decorators import mark_read_only, require_writes_enabled
+from tiktok_mcp.server import app
+from tiktok_mcp.types.accounts import Account, AccountStatus, ApiType
+from tiktok_mcp.types.app_credentials import AppCredentials
+from tiktok_mcp.types.errors import AccountNotFoundError, AppCredentialsNotSetError
+
+USER_INFO_PATH = "/v2/user/info/"
+VIDEO_LIST_PATH = "/v2/video/list/"
+VIDEO_QUERY_PATH = "/v2/video/query/"
+OAUTH_REVOKE_PATH = "/v2/oauth/revoke/"
+MAX_QUERY_VIDEO_IDS = 20
+
+DEFAULT_USER_FIELDS: tuple[str, ...] = (
+    "open_id",
+    "union_id",
+    "avatar_url",
+    "display_name",
+    "bio_description",
+    "follower_count",
+    "following_count",
+    "likes_count",
+    "video_count",
+    "is_verified",
+    "profile_deep_link",
+)
+DEFAULT_VIDEO_FIELDS: tuple[str, ...] = (
+    "id",
+    "create_time",
+    "cover_image_url",
+    "share_url",
+    "video_description",
+    "duration",
+    "height",
+    "width",
+    "title",
+    "embed_html",
+    "embed_link",
+    "like_count",
+    "comment_count",
+    "share_count",
+    "view_count",
+)
+VIDEO_METRICS_FIELDS: tuple[str, ...] = (
+    "id",
+    "view_count",
+    "like_count",
+    "comment_count",
+    "share_count",
+    "embed_html",
+    "embed_link",
+)
+USER_FIELD_SCOPES: Mapping[str, str] = {
+    "union_id": "user.info.profile",
+    "bio_description": "user.info.profile",
+    "is_verified": "user.info.profile",
+    "profile_deep_link": "user.info.profile",
+    "follower_count": "user.info.stats",
+    "following_count": "user.info.stats",
+    "likes_count": "user.info.stats",
+    "video_count": "user.info.stats",
+}
+
+
+@app.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@mark_read_only
+async def display_get_user_info(
+    alias: str,
+    fields: list[str] | None = None,
+) -> dict[str, object]:
+    """Get Display API user profile fields for an authorized account."""
+    account, client = await _build_display_client(alias)
+    request_fields = _allowed_user_fields(account, fields)
+    try:
+        data = await _request_json_object(
+            client,
+            "POST",
+            USER_INFO_PATH,
+            json_body={"fields": request_fields},
+        )
+    finally:
+        await client.aclose()
+
+    user_payload = _nested_object(data, "user")
+    user_info = UserInfo.model_validate(_scope_gated_user_payload(account, user_payload))
+    return cast(dict[str, object], user_info.model_dump(mode="json"))
+
+
+@app.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@mark_read_only
+async def display_list_videos(
+    alias: str,
+    cursor: int | None = None,
+    max_count: int = 20,
+    fields: list[str] | None = None,
+) -> dict[str, object]:
+    """List Display API videos with TikTok's native cursor pagination."""
+    _account, client = await _build_display_client(alias)
+    body: dict[str, object] = {
+        "max_count": max_count,
+        "fields": _field_list(fields, DEFAULT_VIDEO_FIELDS),
+    }
+    if cursor is not None:
+        body["cursor"] = cursor
+
+    try:
+        data = await _request_json_object(client, "POST", VIDEO_LIST_PATH, json_body=body)
+    finally:
+        await client.aclose()
+
+    videos = [_dump_video(video_payload) for video_payload in _object_list(data, "videos")]
+    return {
+        "videos": videos,
+        "cursor": _required_int(data, "cursor"),
+        "has_more": _required_bool(data, "has_more"),
+    }
+
+
+@app.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@mark_read_only
+async def display_query_videos(
+    alias: str,
+    video_ids: list[str],
+    fields: list[str] | None = None,
+) -> list[dict[str, object]]:
+    """Query up to 20 Display API videos by video ID."""
+    return await _query_videos(alias, video_ids, fields)
+
+
+@app.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@mark_read_only
+async def display_get_video_metrics(alias: str, video_id: str) -> dict[str, object]:
+    """Get Display API metrics for one video."""
+    videos = await _query_videos(alias, [video_id], list(VIDEO_METRICS_FIELDS))
+    if not videos:
+        raise ValueError(f"Display API returned no video for video_id={video_id!r}")
+    metrics = VideoMetrics.model_validate(videos[0])
+    return cast(dict[str, object], metrics.model_dump(mode="json"))
+
+
+async def _query_videos(
+    alias: str,
+    video_ids: list[str],
+    fields: list[str] | None = None,
+) -> list[dict[str, object]]:
+    if len(video_ids) > MAX_QUERY_VIDEO_IDS:
+        raise ValueError("display_query_videos accepts at most 20 video_ids per call")
+
+    _account, client = await _build_display_client(alias)
+    body = {
+        "filters": {"video_ids": video_ids},
+        "fields": _field_list(fields, DEFAULT_VIDEO_FIELDS),
+    }
+    try:
+        data = await _request_json_object(client, "POST", VIDEO_QUERY_PATH, json_body=body)
+    finally:
+        await client.aclose()
+
+    return [_dump_video(video_payload) for video_payload in _object_list(data, "videos")]
+
+
+@app.tool(annotations=ToolAnnotations(destructiveHint=True))
+@require_writes_enabled("display")
+async def display_refresh_token(alias: str) -> dict[str, object]:
+    """Force a Display OAuth refresh-token rotation for a stored account."""
+    _account, client = await _build_display_client(alias)
+    try:
+        stored_account, stored_tokens = await client._load_account_record()
+        refreshed_tokens = await client._refresh_tokens(stored_account, stored_tokens)
+    finally:
+        await client.aclose()
+
+    return {
+        "alias": alias,
+        "refreshed": True,
+        "access_token_expires_at": _datetime_to_json(refreshed_tokens.access_token_expires_at),
+        "refresh_token_expires_at": _optional_datetime_to_json(
+            refreshed_tokens.refresh_token_expires_at,
+        ),
+    }
+
+
+@app.tool(annotations=ToolAnnotations(destructiveHint=True))
+@require_writes_enabled("display")
+async def display_revoke_token(alias: str) -> dict[str, object]:
+    """Revoke a Display OAuth token and mark the account revoked without deleting it."""
+    _account, client = await _build_display_client(alias)
+    try:
+        _ = await _request_json_object(client, "POST", OAUTH_REVOKE_PATH, json_body={})
+        account, tokens = await client._load_account_record()
+        revoked_account = account.model_copy(update={"status": AccountStatus.REVOKED})
+        backend = await get_backend()
+        await atomic_account_update(
+            backend,
+            revoked_account.api_type,
+            revoked_account.sandbox,
+            revoked_account.alias,
+            revoked_account,
+            tokens,
+        )
+    finally:
+        await client.aclose()
+
+    return {"alias": alias, "revoked": True, "status": AccountStatus.REVOKED.value}
+
+
+async def _build_display_client(alias: str) -> tuple[Account, DisplayAPIClient]:
+    account = await _load_display_account(alias)
+    credentials = await _load_display_app_credentials(account.sandbox)
+    return account, DisplayAPIClient(account, credentials)
+
+
+async def _load_display_account(alias: str) -> Account:
+    backend = await get_backend()
+    for key in await backend.list_keys("tiktok-mcp::display::"):
+        if not key.endswith(f"::account::{alias}"):
+            continue
+        raw_record = await backend.get(key)
+        if raw_record is None:
+            continue
+        account, _tokens = deserialize_account_record(raw_record)
+        if account.api_type is ApiType.DISPLAY:
+            return account
+    raise AccountNotFoundError(alias, api_type=ApiType.DISPLAY.value)
+
+
+async def _load_display_app_credentials(sandbox: bool) -> AppCredentials:
+    backend = await get_backend()
+    raw_credentials = await backend.get(app_creds_key(ApiType.DISPLAY, sandbox))
+    if raw_credentials is None:
+        raise AppCredentialsNotSetError(ApiType.DISPLAY.value, sandbox)
+
+    try:
+        payload = cast(object, json.loads(raw_credentials))
+    except json.JSONDecodeError as exc:
+        raise AppCredentialsNotSetError(ApiType.DISPLAY.value, sandbox) from exc
+    if not isinstance(payload, dict):
+        raise AppCredentialsNotSetError(ApiType.DISPLAY.value, sandbox)
+
+    credentials_payload = _credentials_payload({str(key): value for key, value in payload.items()})
+    try:
+        return AppCredentials.model_validate(credentials_payload)
+    except ValidationError as exc:
+        raise AppCredentialsNotSetError(ApiType.DISPLAY.value, sandbox) from exc
+
+
+async def _request_json_object(
+    client: DisplayAPIClient,
+    method: str,
+    path: str,
+    *,
+    json_body: Mapping[str, object],
+) -> dict[str, object]:
+    data = await client.request(method, path, json=dict(json_body))
+    if not isinstance(data, dict):
+        raise ValueError(f"Display API response data for {path} must be a JSON object")
+    return {str(key): value for key, value in data.items()}
+
+
+def _credentials_payload(payload: Mapping[str, object]) -> dict[str, object]:
+    nested_credentials = payload.get("credentials")
+    if isinstance(nested_credentials, dict):
+        source = {str(key): value for key, value in nested_credentials.items()}
+    else:
+        source = dict(payload)
+    return {
+        key: source[key]
+        for key in {"api_type", "sandbox", "client_id", "client_secret", "created_at"}
+        if key in source
+    }
+
+
+def _allowed_user_fields(account: Account, fields: Sequence[str] | None) -> list[str]:
+    requested_fields = _field_list(fields, DEFAULT_USER_FIELDS)
+    granted_scopes = set(account.scopes)
+    return [
+        field
+        for field in requested_fields
+        if USER_FIELD_SCOPES.get(field) is None or USER_FIELD_SCOPES[field] in granted_scopes
+    ]
+
+
+def _scope_gated_user_payload(
+    account: Account,
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    gated_payload = dict(payload)
+    granted_scopes = set(account.scopes)
+    for field, required_scope in USER_FIELD_SCOPES.items():
+        if required_scope not in granted_scopes:
+            gated_payload.pop(field, None)
+    return gated_payload
+
+
+def _field_list(fields: Sequence[str] | None, defaults: Sequence[str]) -> list[str]:
+    if fields is None:
+        return list(defaults)
+    return list(fields)
+
+
+def _nested_object(payload: Mapping[str, object], key: str) -> dict[str, object]:
+    nested = payload.get(key)
+    if isinstance(nested, dict):
+        return {str(item_key): item_value for item_key, item_value in nested.items()}
+    return dict(payload)
+
+
+def _object_list(payload: Mapping[str, object], key: str) -> list[dict[str, object]]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        raise ValueError(f"Display API response field {key!r} must be a list")
+    objects: list[dict[str, object]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError(f"Display API response field {key!r} must contain objects")
+        objects.append({str(item_key): item_value for item_key, item_value in item.items()})
+    return objects
+
+
+def _dump_video(video_payload: Mapping[str, object]) -> dict[str, object]:
+    video = Video.model_validate(video_payload)
+    return cast(dict[str, object], video.model_dump(mode="json"))
+
+
+def _required_int(payload: Mapping[str, object], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"Display API response field {key!r} must be an integer")
+    return value
+
+
+def _required_bool(payload: Mapping[str, object], key: str) -> bool:
+    value = payload.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"Display API response field {key!r} must be a boolean")
+    return value
+
+
+def _datetime_to_json(value: datetime) -> str:
+    return value.isoformat()
+
+
+def _optional_datetime_to_json(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return _datetime_to_json(value)
+
+
+__all__ = [
+    "DEFAULT_USER_FIELDS",
+    "DEFAULT_VIDEO_FIELDS",
+    "MAX_QUERY_VIDEO_IDS",
+    "VIDEO_METRICS_FIELDS",
+    "display_get_user_info",
+    "display_get_video_metrics",
+    "display_list_videos",
+    "display_query_videos",
+    "display_refresh_token",
+    "display_revoke_token",
+]
