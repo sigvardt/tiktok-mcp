@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import urllib.parse
 from collections.abc import Callable, Iterator
@@ -300,6 +301,73 @@ async def test_oauth_error_surfaced(
 
 
 @pytest.mark.asyncio
+async def test_loopback_callback_capture(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+    unused_tcp_port: int,
+) -> None:
+    _ = allow_account_changes
+    redirect_uri = f"http://localhost:{unused_tcp_port}/callback"
+    await _store_app_credentials(backend, ApiType.DISPLAY, redirect_uri=redirect_uri)
+    _mock_token_exchange(monkeypatch, TOKEN_PAYLOAD)
+    opened_urls: list[str] = []
+
+    def open_browser(url: str) -> bool:
+        opened_urls.append(url)
+
+        async def hit_callback() -> None:
+            parsed_url = urllib.parse.urlparse(url)
+            params = urllib.parse.parse_qs(parsed_url.query)
+            callback_query = urllib.parse.urlencode(
+                {"code": "synthetic-code", "state": params["state"][0]}
+            )
+            callback_url = f"http://127.0.0.1:{unused_tcp_port}/callback?{callback_query}"
+            async with httpx.AsyncClient() as client:
+                callback_response = await client.get(callback_url)
+            assert callback_response.status_code == httpx.codes.OK
+            assert "Authentication complete" in callback_response.text
+
+        _ = asyncio.create_task(hit_callback())
+        return True
+
+    monkeypatch.setattr("tiktok_mcp.tools.accounts.webbrowser.open", open_browser)
+
+    response = await add_account(ApiType.DISPLAY, alias="nordic-display-loopback")
+
+    assert opened_urls
+    assert response["alias"] == "nordic-display-loopback"
+    assert response["api_type"] == "display"
+    assert await backend.get(account_key(ApiType.DISPLAY, False, "nordic-display-loopback"))
+
+
+@pytest.mark.asyncio
+async def test_loopback_timeout(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+    unused_tcp_port: int,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(
+        backend,
+        ApiType.DISPLAY,
+        redirect_uri=f"http://localhost:{unused_tcp_port}/callback",
+    )
+    monkeypatch.setattr(accounts_module, "_LOOPBACK_TIMEOUT_SECONDS", 0.01)
+    def open_browser_noop(url: str) -> bool:
+        _ = url
+        return True
+
+    monkeypatch.setattr("tiktok_mcp.tools.accounts.webbrowser.open", open_browser_noop)
+
+    response = await add_account(ApiType.DISPLAY, alias="nordic-display-timeout")
+
+    assert response["error"] == "oauth_loopback_timeout"
+    assert response["context"]["timeout_seconds"] == 0.01
+
+
+@pytest.mark.asyncio
 async def test_complete_account_login_persists_sandbox_flag(
     backend: KeyringBackend,
     allow_account_changes: None,
@@ -506,6 +574,7 @@ async def _store_app_credentials(
     sandbox: bool = False,
     client_id: str = "test-client-id",
     client_secret: str = "test-client-secret",
+    redirect_uri: str = REDIRECT_URI,
 ) -> None:
     payload = {
         "api_type": api_type.value,
@@ -513,7 +582,7 @@ async def _store_app_credentials(
         "client_id": client_id,
         "client_secret": client_secret,
         "created_at": NOW.isoformat(),
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
     }
     await backend.set(app_creds_key(api_type, sandbox), json.dumps(payload))
 

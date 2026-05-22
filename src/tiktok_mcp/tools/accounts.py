@@ -7,6 +7,7 @@ import json
 import re
 import secrets
 import urllib.parse
+import webbrowser
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -53,6 +54,18 @@ from tiktok_mcp.types.app_credentials import AppCredentials
 
 DISPLAY_AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/"
 DISPLAY_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
+LOOPBACK_BIND_HOST = "127.0.0.1"
+_LOOPBACK_TIMEOUT_SECONDS = 300.0
+_LOOPBACK_SUCCESS_HTML = (
+    "<!doctype html><html><head><title>Authentication complete</title></head>"
+    "<body><h1>Authentication complete</h1>"
+    "<p>You can close this tab and return to your terminal.</p></body></html>"
+)
+_LOOPBACK_ERROR_HTML = (
+    "<!doctype html><html><head><title>Authentication failed</title></head>"
+    "<body><h1>Authentication failed</h1>"
+    "<p>Return to your terminal and start the login flow again.</p></body></html>"
+)
 INSTRUCTIONS = (
     "Open the URL in your browser, authenticate with a sandbox-allowlisted TikTok account, "
     "then copy the FULL redirect URL from your browser's address bar and call "
@@ -79,12 +92,21 @@ class LoadedAppCredentials:
     redirect_uri: str
 
 
+@dataclass(frozen=True)
+class LoopbackRedirect:
+    scheme: str
+    netloc: str
+    path: str
+    port: int
+
+
 @app.tool(annotations=ToolAnnotations(destructiveHint=True))
 @require_account_changes_enabled
 async def add_account(
     api_type: ApiType,
     alias: str | None = None,
     sandbox: bool = False,
+    await_callback: bool = False,
 ) -> dict[str, Any]:
     backend = await get_backend()
     loaded_credentials = await _load_app_credentials(backend, api_type, sandbox=sandbox)
@@ -103,6 +125,18 @@ async def add_account(
         pkce_verifier=pkce_verifier,
     )
     url = _build_authorization_url(loaded_credentials, oauth_state.state, pkce_verifier)
+    loopback_redirect = _loopback_redirect(loaded_credentials.redirect_uri)
+    if await_callback or loopback_redirect is not None:
+        if loopback_redirect is None:
+            return {
+                "error": "loopback_redirect_required",
+                "message": (
+                    "Loopback callback capture requires an http://localhost:<port> "
+                    "or http://127.0.0.1:<port> redirect_uri."
+                ),
+            }
+        return await _complete_loopback_login(url, loopback_redirect)
+
     return {
         "url": url,
         "state": oauth_state.state,
@@ -377,6 +411,160 @@ async def _exchange_code_for_tokens(
 
 def _build_http_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=30.0)
+
+
+async def _complete_loopback_login(
+    authorization_url: str,
+    loopback_redirect: LoopbackRedirect,
+) -> dict[str, Any]:
+    try:
+        redirect_url = await _capture_loopback_callback(authorization_url, loopback_redirect)
+    except TikTokMCPError as exc:
+        return exc.to_dict()
+    except OSError as exc:
+        return {
+            "error": "oauth_loopback_unavailable",
+            "message": (
+                f"Could not start OAuth loopback listener on "
+                f"{LOOPBACK_BIND_HOST}:{loopback_redirect.port}."
+            ),
+            "context": {"reason": type(exc).__name__},
+        }
+    return cast(dict[str, Any], await complete_account_login(redirect_url))
+
+
+async def _capture_loopback_callback(
+    authorization_url: str,
+    loopback_redirect: LoopbackRedirect,
+) -> str:
+    loop = asyncio.get_running_loop()
+    callback_future: asyncio.Future[str] = loop.create_future()
+
+    async def handle_request(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await _handle_loopback_request(reader, writer, loopback_redirect, callback_future)
+
+    server = await asyncio.start_server(
+        handle_request,
+        host=LOOPBACK_BIND_HOST,
+        port=loopback_redirect.port,
+    )
+    try:
+        _ = webbrowser.open(authorization_url)
+        return await asyncio.wait_for(callback_future, timeout=_LOOPBACK_TIMEOUT_SECONDS)
+    except TimeoutError as exc:
+        raise TikTokMCPError(
+            "oauth_loopback_timeout",
+            f"OAuth loopback callback timed out after {_LOOPBACK_TIMEOUT_SECONDS:g} seconds.",
+            {"timeout_seconds": _LOOPBACK_TIMEOUT_SECONDS},
+        ) from exc
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+async def _handle_loopback_request(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    loopback_redirect: LoopbackRedirect,
+    callback_future: asyncio.Future[str],
+) -> None:
+    status = "200 OK"
+    body = _LOOPBACK_SUCCESS_HTML
+    try:
+        request_line = await reader.readline()
+        await _drain_http_headers(reader)
+        redirect_url = _redirect_url_from_loopback_request(request_line, loopback_redirect)
+    except TikTokMCPError as exc:
+        status = "400 Bad Request"
+        body = _LOOPBACK_ERROR_HTML
+        if not callback_future.done():
+            callback_future.set_exception(exc)
+    else:
+        if not callback_future.done():
+            callback_future.set_result(redirect_url)
+
+    await _write_loopback_response(writer, status, body)
+
+
+async def _drain_http_headers(reader: asyncio.StreamReader) -> None:
+    while True:
+        line = await reader.readline()
+        if line in {b"", b"\r\n", b"\n"}:
+            return
+
+
+def _redirect_url_from_loopback_request(
+    request_line: bytes,
+    loopback_redirect: LoopbackRedirect,
+) -> str:
+    try:
+        method, target, _version = request_line.decode("ascii", errors="replace").strip().split(
+            maxsplit=2
+        )
+    except ValueError as exc:
+        raise TikTokMCPError(
+            "oauth_loopback_invalid_request",
+            "OAuth loopback callback was not a valid HTTP request.",
+        ) from exc
+
+    if method != "GET":
+        raise TikTokMCPError(
+            "oauth_loopback_invalid_request",
+            "OAuth loopback callback must use GET.",
+        )
+
+    parsed_target = urllib.parse.urlparse(target)
+    if parsed_target.path != loopback_redirect.path:
+        raise TikTokMCPError(
+            "oauth_loopback_invalid_request",
+            "OAuth loopback callback path did not match the registered redirect_uri.",
+            {"expected_path": loopback_redirect.path, "actual_path": parsed_target.path},
+        )
+
+    return urllib.parse.urlunparse(
+        (
+            loopback_redirect.scheme,
+            loopback_redirect.netloc,
+            loopback_redirect.path,
+            "",
+            parsed_target.query,
+            "",
+        )
+    )
+
+
+async def _write_loopback_response(
+    writer: asyncio.StreamWriter,
+    status: str,
+    body: str,
+) -> None:
+    body_bytes = body.encode("utf-8")
+    header = (
+        f"HTTP/1.1 {status}\r\n"
+        "Content-Type: text/html; charset=utf-8\r\n"
+        f"Content-Length: {len(body_bytes)}\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    )
+    writer.write(header.encode("ascii") + body_bytes)
+    await writer.drain()
+    writer.close()
+    await writer.wait_closed()
+
+
+def _loopback_redirect(redirect_uri: str) -> LoopbackRedirect | None:
+    parsed_uri = urllib.parse.urlparse(redirect_uri)
+    hostname = parsed_uri.hostname.lower() if parsed_uri.hostname is not None else None
+    if parsed_uri.scheme != "http" or hostname not in {"localhost", "127.0.0.1"}:
+        return None
+    if parsed_uri.port is None:
+        return None
+    return LoopbackRedirect(
+        scheme=parsed_uri.scheme,
+        netloc=parsed_uri.netloc,
+        path=parsed_uri.path or "/",
+        port=parsed_uri.port,
+    )
 
 
 async def _load_app_credentials(
