@@ -71,6 +71,10 @@ INSTRUCTIONS = (
     "then copy the FULL redirect URL from your browser's address bar and call "
     "complete_account_login with it."
 )
+LOOPBACK_INSTRUCTIONS = (
+    "Open the URL in your browser, sign in to TikTok, and approve the requested scopes. "
+    "The local 127.0.0.1 listener will capture the redirect and finish the login automatically."
+)
 ACCOUNT_KEY_RE = re.compile(
     r"^tiktok-mcp::(?P<api>display|marketing|business_organic|content_posting)::"
     r"(?P<mode>sandbox|production)::account::(?P<alias>[a-z0-9-]{3,50})$"
@@ -148,9 +152,88 @@ async def add_account(
 
 @app.tool(annotations=ToolAnnotations(destructiveHint=True))
 @require_account_changes_enabled
+async def add_account_with_loopback(
+    api_type: ApiType,
+    sandbox: bool = False,
+    alias: str | None = None,
+    scopes: list[str] | None = None,
+) -> dict[str, Any]:
+    backend = await get_backend()
+    loaded_credentials = await _load_app_credentials(backend, api_type, sandbox=sandbox)
+    if loaded_credentials is None:
+        return _app_credentials_not_set(api_type)
+
+    suggested_alias = alias or _generate_alias(api_type)
+    if not _valid_alias(suggested_alias):
+        return _invalid_alias_error(suggested_alias)
+
+    listener = await _start_ephemeral_loopback_server(loaded_credentials.redirect_uri)
+    if listener is None:
+        return {
+            "error": "loopback_redirect_required",
+            "message": (
+                "Loopback callback capture requires an http://localhost:<port> "
+                "or http://127.0.0.1:<port> redirect_uri."
+            ),
+        }
+
+    server, loopback_redirect, callback_future = listener
+    loopback_redirect_url = _loopback_redirect_url(loopback_redirect)
+    loopback_credentials = LoadedAppCredentials(
+        credentials=loaded_credentials.credentials,
+        redirect_uri=loopback_redirect_url,
+    )
+    pkce_verifier = _new_pkce_verifier() if api_type in PKCE_APIS else None
+    oauth_state = await state.create_state(
+        api_type,
+        suggested_alias,
+        sandbox=sandbox,
+        pkce_verifier=pkce_verifier,
+    )
+    auth_url = _build_authorization_url(
+        loopback_credentials,
+        oauth_state.state,
+        pkce_verifier,
+        scopes=scopes,
+    )
+
+    try:
+        redirect_url = await _await_loopback_callback(server, auth_url, callback_future)
+    except TikTokMCPError as exc:
+        return exc.to_dict()
+    except OSError as exc:
+        return {
+            "error": "oauth_loopback_unavailable",
+            "message": (
+                f"Could not start OAuth loopback listener on "
+                f"{LOOPBACK_BIND_HOST}:{loopback_redirect.port}."
+            ),
+            "context": {"reason": type(exc).__name__},
+        }
+
+    result = await _complete_account_login(
+        redirect_url,
+        redirect_uri_override=loopback_redirect_url,
+    )
+    if "error" in result:
+        return result
+    return {"auth_url": auth_url, "instructions": LOOPBACK_INSTRUCTIONS, **result}
+
+
+@app.tool(annotations=ToolAnnotations(destructiveHint=True))
+@require_account_changes_enabled
 async def complete_account_login(
     redirect_url: str,
     alias_override: str | None = None,
+) -> dict[str, Any]:
+    return await _complete_account_login(redirect_url, alias_override=alias_override)
+
+
+async def _complete_account_login(
+    redirect_url: str,
+    alias_override: str | None = None,
+    *,
+    redirect_uri_override: str | None = None,
 ) -> dict[str, Any]:
     try:
         parsed_redirect = parse_redirect_url(redirect_url)
@@ -164,11 +247,13 @@ async def complete_account_login(
         if loaded_credentials is None:
             return _app_credentials_not_set(oauth_state.api_type)
 
-        _validate_redirect_host(loaded_credentials.redirect_uri, parsed_redirect["host"])
+        redirect_uri = redirect_uri_override or loaded_credentials.redirect_uri
+        _validate_redirect_host(redirect_uri, parsed_redirect["host"])
         payload = await _exchange_code_for_tokens(
             loaded_credentials,
             parsed_redirect["code"],
             oauth_state.pkce_verifier,
+            redirect_uri=redirect_uri,
         )
         access_value, refresh_value = _extract_token_values(payload)
         register_token(access_value, "access_token")
@@ -329,14 +414,17 @@ def _build_authorization_url(
     loaded_credentials: LoadedAppCredentials,
     state_token: str,
     pkce_verifier: str | None,
+    scopes: list[str] | None = None,
 ) -> str:
     credentials = loaded_credentials.credentials
     client_id = credentials.client_id.get_secret_value()
     if credentials.api_type in PKCE_APIS:
-        scopes = DISPLAY_SCOPES if credentials.api_type is ApiType.DISPLAY else POSTING_SCOPES
+        selected_scopes = scopes or (
+            DISPLAY_SCOPES if credentials.api_type is ApiType.DISPLAY else POSTING_SCOPES
+        )
         params = {
             "client_key": client_id,
-            "scope": ",".join(scopes),
+            "scope": ",".join(selected_scopes),
             "response_type": "code",
             "redirect_uri": loaded_credentials.redirect_uri,
             "state": state_token,
@@ -359,15 +447,18 @@ async def _exchange_code_for_tokens(
     loaded_credentials: LoadedAppCredentials,
     code: str,
     pkce_verifier: str | None,
+    *,
+    redirect_uri: str | None = None,
 ) -> dict[str, Any]:
     credentials = loaded_credentials.credentials
     if credentials.api_type in PKCE_APIS:
+        effective_redirect_uri = redirect_uri or loaded_credentials.redirect_uri
         body = {
             "client_key": credentials.client_id.get_secret_value(),
             "client_secret": credentials.client_secret.get_secret_value(),
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": loaded_credentials.redirect_uri,
+            "redirect_uri": effective_redirect_uri,
         }
         if pkce_verifier is not None:
             body["code_verifier"] = pkce_verifier
@@ -416,6 +507,9 @@ def _build_http_client() -> httpx.AsyncClient:
 async def _complete_loopback_login(
     authorization_url: str,
     loopback_redirect: LoopbackRedirect,
+    *,
+    alias_override: str | None = None,
+    redirect_uri_override: str | None = None,
 ) -> dict[str, Any]:
     try:
         redirect_url = await _capture_loopback_callback(authorization_url, loopback_redirect)
@@ -430,7 +524,11 @@ async def _complete_loopback_login(
             ),
             "context": {"reason": type(exc).__name__},
         }
-    return cast(dict[str, Any], await complete_account_login(redirect_url))
+    return await _complete_account_login(
+        redirect_url,
+        alias_override=alias_override,
+        redirect_uri_override=redirect_uri_override,
+    )
 
 
 async def _capture_loopback_callback(
@@ -448,6 +546,53 @@ async def _capture_loopback_callback(
         host=LOOPBACK_BIND_HOST,
         port=loopback_redirect.port,
     )
+    return await _await_loopback_callback(server, authorization_url, callback_future)
+
+
+async def _start_ephemeral_loopback_server(
+    redirect_uri: str,
+) -> tuple[asyncio.AbstractServer, LoopbackRedirect, asyncio.Future[str]] | None:
+    if _loopback_redirect(redirect_uri, port=1) is None:
+        return None
+
+    loop = asyncio.get_running_loop()
+    callback_future: asyncio.Future[str] = loop.create_future()
+    loopback_redirect: LoopbackRedirect | None = None
+    server: asyncio.AbstractServer | None = None
+
+    async def handle_request(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        nonlocal server
+        if server is not None:
+            server.close()
+        if loopback_redirect is None:
+            raise TikTokMCPError(
+                "oauth_loopback_unavailable",
+                "OAuth loopback listener was not initialized.",
+            )
+        await _handle_loopback_request(reader, writer, loopback_redirect, callback_future)
+
+    server = await asyncio.start_server(handle_request, host=LOOPBACK_BIND_HOST, port=0)
+    sockets: list[Any] = list(server.sockets or [])
+    if not sockets:
+        server.close()
+        await server.wait_closed()
+        raise OSError("OAuth loopback listener did not expose a socket.")
+
+    bound_port = cast(tuple[str, int], sockets[0].getsockname())[1]
+    loopback_redirect = _loopback_redirect(redirect_uri, port=bound_port)
+    if loopback_redirect is None:
+        server.close()
+        await server.wait_closed()
+        return None
+
+    return server, loopback_redirect, callback_future
+
+
+async def _await_loopback_callback(
+    server: asyncio.AbstractServer,
+    authorization_url: str,
+    callback_future: asyncio.Future[str],
+) -> str:
     try:
         _ = webbrowser.open(authorization_url)
         return await asyncio.wait_for(callback_future, timeout=_LOOPBACK_TIMEOUT_SECONDS)
@@ -552,18 +697,32 @@ async def _write_loopback_response(
     await writer.wait_closed()
 
 
-def _loopback_redirect(redirect_uri: str) -> LoopbackRedirect | None:
+def _loopback_redirect(redirect_uri: str, *, port: int | None = None) -> LoopbackRedirect | None:
     parsed_uri = urllib.parse.urlparse(redirect_uri)
     hostname = parsed_uri.hostname.lower() if parsed_uri.hostname is not None else None
     if parsed_uri.scheme != "http" or hostname not in {"localhost", "127.0.0.1"}:
         return None
-    if parsed_uri.port is None:
+    resolved_port = parsed_uri.port if port is None else port
+    if resolved_port is None:
         return None
     return LoopbackRedirect(
         scheme=parsed_uri.scheme,
-        netloc=parsed_uri.netloc,
+        netloc=f"{hostname}:{resolved_port}",
         path=parsed_uri.path or "/",
-        port=parsed_uri.port,
+        port=resolved_port,
+    )
+
+
+def _loopback_redirect_url(loopback_redirect: LoopbackRedirect) -> str:
+    return urllib.parse.urlunparse(
+        (
+            loopback_redirect.scheme,
+            loopback_redirect.netloc,
+            loopback_redirect.path,
+            "",
+            "",
+            "",
+        )
     )
 
 
@@ -873,6 +1032,7 @@ def _evict_pending_removals() -> None:
 
 __all__ = [
     "add_account",
+    "add_account_with_loopback",
     "complete_account_login",
     "list_accounts",
     "remove_account",

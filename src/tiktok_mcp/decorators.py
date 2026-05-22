@@ -41,6 +41,7 @@ _WRITE_PREFIXES: tuple[str, ...] = (
 _ACCOUNT_CHANGE_NAMES: frozenset[str] = frozenset(
     {
         "add_account",
+        "add_account_with_loopback",
         "complete_account_login",
         "remove_account",
         "rename_account",

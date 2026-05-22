@@ -29,7 +29,9 @@ from tiktok_mcp.auth.keychain import (
 )
 from tiktok_mcp.auth.state import create_state, reset_state_manager
 from tiktok_mcp.tools.accounts import (
+    LOOPBACK_INSTRUCTIONS,
     add_account,
+    add_account_with_loopback,
     complete_account_login,
     list_accounts,
     remove_account,
@@ -47,6 +49,15 @@ TOKEN_PAYLOAD: dict[str, object] = {
     "scope": "user.info.basic",
     "token_type": "Bearer",
     "open_id": "test-open-id",
+    "refresh_expires_in": 31536000,
+}
+BUSINESS_TOKEN_PAYLOAD: dict[str, object] = {
+    "access" + "_token": "synthetic-business-access-token",
+    "refresh" + "_token": "synthetic-business-refresh-token",
+    "expires_in": 86400,
+    "scope": "ad.manage",
+    "token_type": "Bearer",
+    "advertiser_ids": ["test-advertiser-id"],
     "refresh_expires_in": 31536000,
 }
 
@@ -325,6 +336,130 @@ async def test_oauth_error_envelope_surfaced(
     assert response["context"]["tiktok_error"] == "invalid_request"
     assert response["context"]["log_id"] == "oauth-log-id"
     assert "missing string field access_token" not in json.dumps(response)
+
+
+def _install_loopback_browser(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    callback_code: str = "synthetic-code",
+) -> list[str]:
+    opened_urls: list[str] = []
+
+    def open_browser(url: str) -> bool:
+        opened_urls.append(url)
+
+        async def hit_callback() -> None:
+            parsed_url = urllib.parse.urlparse(url)
+            params = urllib.parse.parse_qs(parsed_url.query)
+            redirect_uri = urllib.parse.urlparse(params["redirect_uri"][0])
+            callback_query = urllib.parse.urlencode(
+                {"code": callback_code, "state": params["state"][0]}
+            )
+            callback_url = (
+                f"http://127.0.0.1:{redirect_uri.port}{redirect_uri.path}?{callback_query}"
+            )
+            async with httpx.AsyncClient() as client:
+                callback_response = await client.get(callback_url)
+            assert callback_response.status_code == httpx.codes.OK
+            assert "Authentication complete" in callback_response.text
+
+        _ = asyncio.create_task(hit_callback())
+        return True
+
+    monkeypatch.setattr("tiktok_mcp.tools.accounts.webbrowser.open", open_browser)
+    return opened_urls
+
+
+@pytest.mark.asyncio
+async def test_add_account_with_loopback_display_happy_path(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.DISPLAY, redirect_uri="http://localhost:8000/callback")
+    _mock_token_exchange(monkeypatch, TOKEN_PAYLOAD)
+    pkce_verifier = "A" * 43
+    monkeypatch.setattr(accounts_module, "_new_pkce_verifier", lambda: pkce_verifier)
+    opened_urls = _install_loopback_browser(monkeypatch)
+
+    response = await add_account_with_loopback(
+        ApiType.DISPLAY,
+        alias="nordic-display-loopback",
+        scopes=["user.info.basic", "video.list"],
+    )
+
+    parsed_auth_url = urllib.parse.urlparse(response["auth_url"])
+    params = urllib.parse.parse_qs(parsed_auth_url.query)
+    redirect_uri = urllib.parse.urlparse(params["redirect_uri"][0])
+    expected_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(pkce_verifier.encode("ascii")).digest()
+    ).rstrip(b"=").decode("ascii")
+
+    assert opened_urls == [response["auth_url"]]
+    assert response["alias"] == "nordic-display-loopback"
+    assert response["api_type"] == "display"
+    assert response["instructions"] == LOOPBACK_INSTRUCTIONS
+    assert params["scope"] == ["user.info.basic,video.list"]
+    assert params["code_challenge"] == [expected_challenge]
+    assert params["code_challenge_method"] == ["S256"]
+    assert redirect_uri.hostname == "localhost"
+    assert redirect_uri.port is not None
+    assert await backend.get(account_key(ApiType.DISPLAY, False, "nordic-display-loopback"))
+
+
+@pytest.mark.asyncio
+async def test_add_account_with_loopback_business_happy_path(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(
+        backend,
+        ApiType.MARKETING,
+        sandbox=True,
+        client_id="sandbox-client-id",
+        redirect_uri="http://localhost:8000/callback",
+    )
+    _mock_token_exchange(
+        monkeypatch,
+        {"code": 0, "data": BUSINESS_TOKEN_PAYLOAD},
+        assert_request=_assert_business_oauth_request,
+    )
+    opened_urls = _install_loopback_browser(monkeypatch, callback_code="synthetic-business-code")
+
+    response = await add_account_with_loopback(
+        ApiType.MARKETING,
+        sandbox=True,
+        alias="nordic-marketing-loopback",
+        scopes=["ignored-scope"],
+    )
+
+    parsed_auth_url = urllib.parse.urlparse(response["auth_url"])
+    params = urllib.parse.parse_qs(parsed_auth_url.query)
+
+    assert opened_urls == [response["auth_url"]]
+    assert response["alias"] == "nordic-marketing-loopback"
+    assert response["api_type"] == "marketing"
+    assert response["sandbox"] is True
+    assert response["instructions"] == LOOPBACK_INSTRUCTIONS
+    assert params["app_id"] == ["sandbox-client-id"]
+    assert params["redirect_uri"][0].startswith("http://localhost:")
+    assert "scope" not in params
+    assert "code_challenge" not in params
+    assert await backend.get(account_key(ApiType.MARKETING, True, "nordic-marketing-loopback"))
+
+
+def _assert_business_oauth_request(request: httpx.Request) -> None:
+    assert request.url.host == "sandbox-ads.tiktok.com"
+    assert request.headers["Content-Type"].startswith("application/json")
+    payload = json.loads(request.content.decode())
+    assert payload == {
+        "app_id": "sandbox-client-id",
+        "secret": "test-client-secret",
+        "auth_code": "synthetic-business-code",
+    }
 
 
 @pytest.mark.asyncio

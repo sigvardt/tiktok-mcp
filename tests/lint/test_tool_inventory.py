@@ -63,6 +63,7 @@ WRITE_PREFIXES = (
 WRITE_NAME_EXCEPTIONS = {"get_publish_status"}
 ACCOUNT_CHANGE_NAMES = {
     "add_account",
+    "add_account_with_loopback",
     "complete_account_login",
     "remove_account",
     "rename_account",

@@ -57,6 +57,7 @@ _WRITE_NAME_EXCEPTIONS = frozenset({"get_publish_status"})
 _ACCOUNT_CHANGE_NAMES = frozenset(
     {
         "add_account",
+        "add_account_with_loopback",
         "complete_account_login",
         "remove_account",
         "rename_account",
