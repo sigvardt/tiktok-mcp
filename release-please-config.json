@@ -1,0 +1,23 @@
+{
+  "release-type": "python",
+  "include-component-in-tag": false,
+  "bump-minor-pre-major": true,
+  "packages": {
+    ".": {
+      "package-name": "tiktok-mcp",
+      "release-type": "python",
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "ci", "section": "Infrastructure" },
+        { "type": "build", "section": "Infrastructure" },
+        { "type": "docs", "section": "Documentation" },
+        { "type": "refactor", "section": "Internal" },
+        { "type": "perf", "section": "Internal" },
+        { "type": "test", "section": "Tests" },
+        { "type": "chore", "section": "Chores", "hidden": false }
+      ],
+      "extra-files": []
+    }
+  }
+}
