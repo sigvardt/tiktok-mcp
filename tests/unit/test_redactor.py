@@ -6,6 +6,7 @@ from collections.abc import Iterator
 import httpx
 import pytest
 
+from tiktok_mcp.api.business.urls import BUSINESS_PROD_URL
 from tiktok_mcp.auth.http_sanitizer import (
     SanitizedHttpxError,
     install_httpx_sanitization,
@@ -159,7 +160,7 @@ async def test_install_httpx_sanitization_idempotent() -> None:
 def _mock_response(text: str = '{"error":"body"}') -> httpx.Response:
     request = httpx.Request(
         "GET",
-        "https://business-api.tiktok.com/open_api/v1.3/oauth/token/?secret=query-token",
+        f"{BUSINESS_PROD_URL}/open_api/v1.3/oauth/token/?secret=query-token",
     )
     return httpx.Response(
         status_code=401,

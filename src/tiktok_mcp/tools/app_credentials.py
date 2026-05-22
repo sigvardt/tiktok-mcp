@@ -10,6 +10,7 @@ import httpx
 from mcp.types import ToolAnnotations
 from pydantic import SecretStr
 
+from tiktok_mcp.api.business.urls import BUSINESS_ACCESS_TOKEN_PATH, business_url
 from tiktok_mcp.auth.keychain import app_creds_key, get_backend
 from tiktok_mcp.auth.redactor import register_token
 from tiktok_mcp.decorators import mark_read_only, require_account_changes_enabled
@@ -25,7 +26,6 @@ from tiktok_mcp.types.errors import KeychainUnavailableError
 APP_CREDS_KEY_PREFIX = "tiktok-mcp::"
 APP_CREDS_KEY_SUFFIX = "::app_creds"
 DISPLAY_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
-BUSINESS_TOKEN_URL = "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/"
 DISPLAY_LIKE_APIS = frozenset({ApiType.DISPLAY, ApiType.CONTENT_POSTING})
 INVALID_AUTH_CODE_CODES = frozenset({40000, 40105})
 CLIENT_SECRET_FIELD = "client_" "secret"
@@ -176,7 +176,7 @@ async def _post_verification_probe(
         )
 
     return await client.post(
-        BUSINESS_TOKEN_URL,
+        business_url(BUSINESS_ACCESS_TOKEN_PATH, sandbox=credentials.sandbox),
         data={
             "app_id": credentials.client_id.get_secret_value(),
             "secret": _secret_value(credentials),

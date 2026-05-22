@@ -7,7 +7,7 @@ interactions:
       Content-Type:
       - application/json
     method: POST
-    uri: https://business-api.tiktok.com/open_api/v1.3/ad/update/
+    uri: https://sandbox-ads.tiktok.com/open_api/v1.3/ad/update/
   response:
     body:
       string: '{"code":0,"message":"OK","request_id":"req-ad-update","data":{"ad_id":"ad-789","updated":true}}'

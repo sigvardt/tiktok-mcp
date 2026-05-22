@@ -1,7 +1,7 @@
 interactions:
 - request:
     method: POST
-    uri: https://business-api.tiktok.com/open_api/v1.3/file/image/ad/upload/
+    uri: https://sandbox-ads.tiktok.com/open_api/v1.3/file/image/ad/upload/
     body: '[multipart body omitted]'
     headers:
       Access-Token:

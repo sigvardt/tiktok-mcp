@@ -16,6 +16,11 @@ import httpx
 from mcp.types import ToolAnnotations
 from pydantic import SecretStr, ValidationError
 
+from tiktok_mcp.api.business.urls import (
+    BUSINESS_ACCESS_TOKEN_PATH,
+    BUSINESS_AUTH_PATH,
+    business_url,
+)
 from tiktok_mcp.auth import state
 from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError, safe_raise_for_status
 from tiktok_mcp.auth.keychain import (
@@ -47,9 +52,7 @@ from tiktok_mcp.types.accounts import AccountTokens
 from tiktok_mcp.types.app_credentials import AppCredentials
 
 DISPLAY_AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/"
-BUSINESS_AUTH_URL = "https://business-api.tiktok.com/portal/auth"
 DISPLAY_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
-BUSINESS_TOKEN_URL = "https://business-api.tiktok.com/open_api/v1.3/oauth2/" + "access" + "_token/"
 INSTRUCTIONS = (
     "Open the URL in your browser, authenticate with a sandbox-allowlisted TikTok account, "
     "then copy the FULL redirect URL from your browser's address bar and call "
@@ -292,7 +295,8 @@ def _build_authorization_url(
         "state": state_token,
         "redirect_uri": loaded_credentials.redirect_uri,
     }
-    return f"{BUSINESS_AUTH_URL}?{urllib.parse.urlencode(params)}"
+    auth_url = business_url(BUSINESS_AUTH_PATH, sandbox=credentials.sandbox)
+    return f"{auth_url}?{urllib.parse.urlencode(params)}"
 
 
 async def _exchange_code_for_tokens(
@@ -325,8 +329,9 @@ async def _exchange_code_for_tokens(
         "secret": credentials.client_secret.get_secret_value(),
         "auth_code": code,
     }
+    token_url = business_url(BUSINESS_ACCESS_TOKEN_PATH, sandbox=credentials.sandbox)
     async with _build_http_client() as client:
-        response = await client.post(BUSINESS_TOKEN_URL, json=body)
+        response = await client.post(token_url, json=body)
     await safe_raise_for_status(response)
     payload = _json_object(response)
     if "code" in payload and payload.get("code") != 0:
@@ -338,7 +343,7 @@ async def _exchange_code_for_tokens(
                 default="Business OAuth token exchange failed",
             ),
             request_id=_optional_string_value(payload, "request_id"),
-            context={"endpoint": urllib.parse.urlparse(BUSINESS_TOKEN_URL).path},
+            context={"endpoint": urllib.parse.urlparse(token_url).path},
         )
     data = payload.get("data")
     if isinstance(data, dict):

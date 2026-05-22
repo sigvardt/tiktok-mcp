@@ -5,7 +5,7 @@ interactions:
       Access-Token:
       - REDACTED
     method: POST
-    uri: https://business-api.tiktok.com/open_api/v1.3/campaign/delete/
+    uri: https://sandbox-ads.tiktok.com/open_api/v1.3/campaign/delete/
   response:
     body:
       string: '{"code":0,"message":"OK","request_id":"req-campaign-delete","data":{"campaign_ids":["1733456789012345"],"modify_time":"2026-05-22 12:30:00","operation_status":"DELETE","request_id":"req-campaign-delete"}}'

@@ -12,6 +12,7 @@ import pytest
 from pydantic import SecretStr
 
 from tiktok_mcp.api.business import BusinessAPIClient
+from tiktok_mcp.api.business.urls import BUSINESS_PROD_URL, BUSINESS_SANDBOX_URL
 from tiktok_mcp.auth.keychain import (
     account_key,
     deserialize_account_record,
@@ -69,6 +70,20 @@ def reset_business_client_state() -> Iterator[None]:
     yield
     reset_tracker()
     root_logger.filters = original_filters
+
+
+def test_sandbox_host_routing() -> None:
+    sandbox_client = BusinessAPIClient(
+        _account(refresh_token="refresh-token-current", sandbox=True),
+        _credentials(sandbox=True),
+    )
+    production_client = BusinessAPIClient(
+        _account(refresh_token="refresh-token-current", sandbox=False),
+        _credentials(sandbox=False),
+    )
+
+    assert sandbox_client.base_url == BUSINESS_SANDBOX_URL
+    assert production_client.base_url == BUSINESS_PROD_URL
 
 
 @pytest.mark.asyncio
@@ -316,11 +331,11 @@ def _client(
     )
 
 
-def _account(*, refresh_token: str | None) -> AccountWithTokens:
+def _account(*, refresh_token: str | None, sandbox: bool = True) -> AccountWithTokens:
     return AccountWithTokens(
         alias="business-demo",
         api_type=ApiType.BUSINESS_ORGANIC,
-        sandbox=True,
+        sandbox=sandbox,
         tiktok_id="business-tiktok-id",
         display_name="Business Demo",
         avatar_url=None,
@@ -336,10 +351,10 @@ def _account(*, refresh_token: str | None) -> AccountWithTokens:
     )
 
 
-def _credentials() -> AppCredentials:
+def _credentials(*, sandbox: bool = True) -> AppCredentials:
     return AppCredentials(
         api_type=ApiType.BUSINESS_ORGANIC,
-        sandbox=True,
+        sandbox=sandbox,
         client_id=SecretStr("business-client-id"),
         client_secret=SecretStr("business-client-secret"),
         created_at=NOW,

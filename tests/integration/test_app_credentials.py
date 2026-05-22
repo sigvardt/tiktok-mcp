@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 import tiktok_mcp.auth.keychain as keychain_module
+from tiktok_mcp.api.business.urls import BUSINESS_ACCESS_TOKEN_PATH, business_url
 from tiktok_mcp.auth.keychain import app_creds_key
 from tiktok_mcp.tools import app_credentials as app_credentials_tools
 from tiktok_mcp.tools.app_credentials import (
@@ -19,7 +20,8 @@ from tiktok_mcp.tools.app_credentials import (
 from tiktok_mcp.types.accounts import ApiType
 
 DISPLAY_VERIFY_URL = "https://open.tiktokapis.com/v2/oauth/token/"
-BUSINESS_VERIFY_URL = "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/"
+BUSINESS_VERIFY_URL = business_url(BUSINESS_ACCESS_TOKEN_PATH, sandbox=False)
+BUSINESS_SANDBOX_VERIFY_URL = business_url(BUSINESS_ACCESS_TOKEN_PATH, sandbox=True)
 SECRET_MARKER = "hunter2_marker_secret_xyz"
 
 
@@ -289,6 +291,35 @@ async def test_verify_marketing_invalid_auth_code_probe_is_valid(
     assert len(calls) == 1
     assert calls[0][0] == BUSINESS_VERIFY_URL
     assert calls[0][1]["auth_code"] == ""
+
+
+@pytest.mark.asyncio
+async def test_verify_marketing_sandbox_uses_sandbox_host(
+    memory_backend: MemoryBackend,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = memory_backend
+    monkeypatch.setenv("TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES", "1")
+    _ = await set_app_credentials(
+        ApiType.MARKETING,
+        client_id="marketing_sandbox_probe",
+        client_secret=SECRET_MARKER,
+        sandbox=True,
+    )
+    calls = _install_httpx_response(
+        monkeypatch,
+        _json_response(
+            {"code": 40105, "message": "invalid auth_code"},
+            url=BUSINESS_SANDBOX_VERIFY_URL,
+            status_code=400,
+        ),
+    )
+
+    response = await verify_app_credentials(ApiType.MARKETING, sandbox=True)
+
+    assert response["valid"] is True
+    assert len(calls) == 1
+    assert calls[0][0] == BUSINESS_SANDBOX_VERIFY_URL
 
 
 def _install_httpx_response(

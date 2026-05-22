@@ -6,11 +6,12 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
+from tiktok_mcp.api.business.urls import BUSINESS_PROD_URL
 from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError
 from tiktok_mcp.envelopes import decode_business_response, decode_display_response
 from tiktok_mcp.types.errors import BusinessApiError, DisplayApiError
 
-BUSINESS_URL = "https://business-api.tiktok.com/open_api/v1.3/advertiser/info/"
+BUSINESS_URL = f"{BUSINESS_PROD_URL}/open_api/v1.3/advertiser/info/"
 DISPLAY_URL = "https://open.tiktokapis.com/v2/user/info/"
 BODY_SECRET_MARKER = "secret_marker_body_token_xyz789"
 

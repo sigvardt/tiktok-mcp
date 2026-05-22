@@ -5,7 +5,7 @@ interactions:
       Access-Token:
       - REDACTED
     method: POST
-    uri: https://business-api.tiktok.com/open_api/v1.3/dmp/custom_audience/delete/
+    uri: https://sandbox-ads.tiktok.com/open_api/v1.3/dmp/custom_audience/delete/
   response:
     body:
       string: '{"code":0,"message":"OK","request_id":"req-audience-delete","data":{"custom_audience_id":"audience-123","deleted":true}}'

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 from collections.abc import Mapping
 from contextvars import ContextVar
@@ -14,6 +15,11 @@ from httpx._types import RequestData, RequestFiles
 from pydantic import BaseModel, SecretStr
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception, stop_after_attempt
 
+from tiktok_mcp.api.business.urls import (
+    BUSINESS_API_BASE,
+    BUSINESS_REFRESH_TOKEN_PATH,
+    business_base_url,
+)
 from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError, install_httpx_sanitization
 from tiktok_mcp.auth.keychain import (
     KeychainBackend,
@@ -41,6 +47,7 @@ from tiktok_mcp.types.errors import (
 
 DataModelT = TypeVar("DataModelT", bound=BaseModel)
 QueryParams = Mapping[str, str | int | float | bool | None]
+logger = logging.getLogger(__name__)
 
 _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _AUTH_ERROR_CODES = frozenset({40100, 40105})
@@ -54,8 +61,8 @@ _REFRESH_LOCKS_GUARD = asyncio.Lock()
 
 
 class BusinessAPIClient:
-    BASE_URL: ClassVar[str] = "https://business-api.tiktok.com"
-    REFRESH_PATH: ClassVar[str] = "/open_api/v1.3/oauth2/refresh_token/"
+    BASE_URL: ClassVar[str] = BUSINESS_API_BASE
+    REFRESH_PATH: ClassVar[str] = BUSINESS_REFRESH_TOKEN_PATH
     MAX_ATTEMPTS: ClassVar[int] = 3
 
     def __init__(
@@ -76,6 +83,7 @@ class BusinessAPIClient:
         self._backend: KeychainBackend | None = backend
         self._transport: httpx.AsyncBaseTransport | None = transport
         self._timeout: float = timeout
+        self.base_url: str = business_base_url(self.account.sandbox)
         self._client: httpx.AsyncClient | None = None
 
         if self.tokens is not None:
@@ -381,10 +389,13 @@ class BusinessAPIClient:
     async def _http_client(self) -> httpx.AsyncClient:
         if self._client is None:
             client = httpx.AsyncClient(
-                base_url=self.BASE_URL,
+                base_url=self.base_url,
                 timeout=self._timeout,
                 transport=self._transport,
-                event_hooks={"response": [self._capture_rate_limit]},
+                event_hooks={
+                    "request": [self._log_request],
+                    "response": [self._capture_rate_limit],
+                },
             )
             install_httpx_sanitization(client)
             self._client = client
@@ -401,6 +412,9 @@ class BusinessAPIClient:
         retry_after_seconds = _parse_retry_after(response.headers.get("Retry-After"))
         _ = _RETRY_AFTER_SECONDS.set(retry_after_seconds)
         await record_429(self.account.api_type, self.account.alias, retry_after_seconds)
+
+    async def _log_request(self, request: httpx.Request) -> None:
+        logger.info("Business API HTTP %s %s", request.method, request.url)
 
     def _auth_headers(self, tokens: AccountTokens) -> dict[str, str]:
         # Unlike Display, Business API requires Access-Token without an Authorization Bearer prefix.
