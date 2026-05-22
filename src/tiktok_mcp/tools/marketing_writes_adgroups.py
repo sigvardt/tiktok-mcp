@@ -29,7 +29,7 @@ from tiktok_mcp.types.errors import (
 ADGROUP_CREATE_PATH = "/open_api/v1.3/adgroup/create/"
 ADGROUP_UPDATE_PATH = "/open_api/v1.3/adgroup/update/"
 ADGROUP_STATUS_UPDATE_PATH = "/open_api/v1.3/adgroup/status/update/"
-ADGROUP_DELETE_PATH = "/open_api/v1.3/adgroup/delete/"
+ADGROUP_DELETE_PATH = ADGROUP_STATUS_UPDATE_PATH
 
 OperationStatus = Literal["ENABLE", "DISABLE", "DELETE"]
 JsonObject = dict[str, object]
@@ -274,7 +274,7 @@ async def delete_adgroup(
     return await _post_adgroup_payload(
         params.alias,
         ADGROUP_DELETE_PATH,
-        _payload_from_model(params, exclude={"alias"}),
+        _delete_payload(params),
     )
 
 
@@ -293,6 +293,12 @@ def _adgroup_payload(model: BaseModel, *, exclude: set[str]) -> JsonObject:
     targeting = payload.pop("targeting", None)
     if isinstance(targeting, dict):
         payload.update(cast(dict[str, object], targeting))
+    return payload
+
+
+def _delete_payload(params: DeleteAdGroupRequest) -> JsonObject:
+    payload = _payload_from_model(params, exclude={"alias"})
+    payload["operation_status"] = "DELETE"
     return payload
 
 

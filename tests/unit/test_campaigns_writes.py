@@ -17,6 +17,7 @@ from tiktok_mcp.server import app
 from tiktok_mcp.tools import marketing_writes_campaigns as campaign_tools
 from tiktok_mcp.tools.marketing_writes_campaigns import (
     CAMPAIGN_CREATE_PATH,
+    CAMPAIGN_STATUS_UPDATE_PATH,
     create_campaign,
     delete_campaign,
     update_campaign,
@@ -156,6 +157,41 @@ async def test_invalid_create_campaign_returns_validation_error_before_http(
 
     assert result["error"] == "validation_error"
     assert build_calls == []
+
+
+@pytest.mark.asyncio
+async def test_delete_campaign_uses_status_update_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests = _install_business_client(
+        monkeypatch,
+        lambda request: _business_response(
+            request,
+            {
+                "campaign_ids": [CAMPAIGN_ID],
+                "modify_time": "2026-05-22 12:30:00",
+                "operation_status": "DELETE",
+            },
+        ),
+    )
+    monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+
+    result = await delete_campaign(ALIAS, ADVERTISER_ID, [CAMPAIGN_ID])
+
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == "POST"
+    assert request.url.path == CAMPAIGN_STATUS_UPDATE_PATH
+    assert json.loads(request.content.decode("utf-8")) == {
+        "advertiser_id": ADVERTISER_ID,
+        "campaign_ids": [CAMPAIGN_ID],
+        "operation_status": "DELETE",
+    }
+    assert result == {
+        "campaign_id": CAMPAIGN_ID,
+        "modify_time": "2026-05-22 12:30:00",
+        "status": "DELETE",
+    }
 
 
 def test_campaign_write_tools_destructive_hint_registry_introspection() -> None:

@@ -94,11 +94,17 @@ async def test_ad_crud_posts_expected_payloads(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == AD_STATUS_UPDATE_PATH:
+            operation_status = _json_body(request)["operation_status"]
+            if operation_status == "DELETE":
+                return _business_response(
+                    request,
+                    {"ad_ids": [AD_ID], "operation_status": "DELETE"},
+                )
+            return _business_response(request, {"ad_ids": [AD_ID], "operation_status": "DISABLE"})
         response_by_path: dict[str, dict[str, object]] = {
             AD_CREATE_PATH: {"ad_id": AD_ID},
             AD_UPDATE_PATH: {"ad_id": AD_ID, "updated": True},
-            AD_STATUS_UPDATE_PATH: {"ad_ids": [AD_ID], "operation_status": "DISABLE"},
-            AD_DELETE_PATH: {"ad_ids": [AD_ID], "deleted": True},
         }
         return _business_response(request, response_by_path[request.url.path])
 
@@ -132,7 +138,7 @@ async def test_ad_crud_posts_expected_payloads(monkeypatch: pytest.MonkeyPatch) 
     assert created == {"ad_id": AD_ID}
     assert updated == {"ad_id": AD_ID, "updated": True}
     assert status == {"ad_ids": [AD_ID], "operation_status": "DISABLE"}
-    assert deleted == {"ad_ids": [AD_ID], "deleted": True}
+    assert deleted == {"ad_ids": [AD_ID], "operation_status": "DELETE"}
     assert [request.url.path for request in requests] == [
         AD_CREATE_PATH,
         AD_UPDATE_PATH,
@@ -161,7 +167,11 @@ async def test_ad_crud_posts_expected_payloads(monkeypatch: pytest.MonkeyPatch) 
         "ad_ids": [AD_ID],
         "operation_status": "DISABLE",
     }
-    assert _json_body(requests[3]) == {"advertiser_id": ADVERTISER_ID, "ad_ids": [AD_ID]}
+    assert _json_body(requests[3]) == {
+        "advertiser_id": ADVERTISER_ID,
+        "ad_ids": [AD_ID],
+        "operation_status": "DELETE",
+    }
 
 
 def test_all_ad_write_tools_destructive_hint_registry() -> None:

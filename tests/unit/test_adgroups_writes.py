@@ -184,15 +184,23 @@ async def test_status_and_delete_post_adgroup_ids(monkeypatch: pytest.MonkeyPatc
     def handler(request: httpx.Request) -> httpx.Response:
         body = _json_body(request)
         if request.url.path == ADGROUP_STATUS_UPDATE_PATH:
+            if body["operation_status"] == "DISABLE":
+                assert body == {
+                    "advertiser_id": ADVERTISER_ID,
+                    "adgroup_ids": ["adgroup-1", "adgroup-2"],
+                    "operation_status": "DISABLE",
+                }
+                return _business_response(
+                    request,
+                    {"success_count": 2, "operation_status": "DISABLE"},
+                )
             assert body == {
                 "advertiser_id": ADVERTISER_ID,
-                "adgroup_ids": ["adgroup-1", "adgroup-2"],
-                "operation_status": "DISABLE",
+                "adgroup_ids": ["adgroup-1"],
+                "operation_status": "DELETE",
             }
-            return _business_response(request, {"success_count": 2, "operation_status": "DISABLE"})
-        assert request.url.path == ADGROUP_DELETE_PATH
-        assert body == {"advertiser_id": ADVERTISER_ID, "adgroup_ids": ["adgroup-1"]}
-        return _business_response(request, {"success_count": 1, "operation_status": "DELETE"})
+            return _business_response(request, {"success_count": 1, "operation_status": "DELETE"})
+        raise AssertionError(f"unexpected path: {request.url.path}")
 
     requests = _install_business_client(monkeypatch, handler)
 

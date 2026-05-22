@@ -132,11 +132,13 @@ def _install_business_client(
 
 
 def _cassette_handler(request: httpx.Request) -> httpx.Response:
+    if request.url.path == ADGROUP_STATUS_UPDATE_PATH:
+        operation_status = _json_body(request)["operation_status"]
+        cassette_name = "delete.yaml" if operation_status == "DELETE" else "pause.yaml"
+        return _cassette_response(cassette_name, request)
     cassette_name_by_path = {
         ADGROUP_CREATE_PATH: "create.yaml",
         ADGROUP_UPDATE_PATH: "update.yaml",
-        ADGROUP_STATUS_UPDATE_PATH: "pause.yaml",
-        ADGROUP_DELETE_PATH: "delete.yaml",
     }
     cassette_name = cassette_name_by_path[request.url.path]
     return _cassette_response(cassette_name, request)

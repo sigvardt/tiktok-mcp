@@ -30,11 +30,11 @@ from tiktok_mcp.types.errors import (
 AD_CREATE_PATH = "/open_api/v1.3/ad/create/"
 AD_UPDATE_PATH = "/open_api/v1.3/ad/update/"
 AD_STATUS_UPDATE_PATH = "/open_api/v1.3/ad/status/update/"
-AD_DELETE_PATH = "/open_api/v1.3/ad/delete/"
+AD_DELETE_PATH = AD_STATUS_UPDATE_PATH
 
 AdFormat = Literal["SINGLE_VIDEO", "COLLECTION_ADS", "CATALOG_CAROUSEL"]
 CreativeMaterialMode = Literal["CUSTOM"]
-AdOperationStatus = Literal["ENABLE", "DISABLE"]
+AdOperationStatus = Literal["ENABLE", "DISABLE", "DELETE"]
 JsonObject = dict[str, object]
 
 
@@ -162,7 +162,11 @@ class DeleteAdRequest(BaseModel):
     ad_id: str = Field(min_length=1)
 
     def to_payload(self) -> JsonObject:
-        return {"advertiser_id": self.advertiser_id, "ad_ids": [self.ad_id]}
+        return {
+            "advertiser_id": self.advertiser_id,
+            "ad_ids": [self.ad_id],
+            "operation_status": "DELETE",
+        }
 
 
 @app.tool(annotations=ToolAnnotations(destructiveHint=True))
@@ -293,7 +297,7 @@ async def delete_ad(alias: str, advertiser_id: str, ad_id: str) -> JsonObject:
 
 async def _post_json(alias: str, path: str, json_payload: JsonObject) -> JsonObject:
     async with await _build_business_client(alias) as client:
-        payload = await client.post(path, json=json_payload)
+        payload = await client.request("POST", path, json=json_payload)
     return _raw_payload(payload)
 
 

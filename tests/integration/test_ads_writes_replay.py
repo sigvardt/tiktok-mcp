@@ -48,7 +48,7 @@ async def test_ad_crud_write_replay_cassettes(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return _cassette_response(_cassette_name(request.url.path), request)
+        return _cassette_response(_cassette_name(request), request)
 
     requests = _install_business_client(monkeypatch, handler)
 
@@ -74,7 +74,7 @@ async def test_ad_crud_write_replay_cassettes(monkeypatch: pytest.MonkeyPatch) -
     assert created["ad_id"] == AD_ID
     assert updated["ad_id"] == AD_ID
     assert status == {"ad_ids": [AD_ID], "operation_status": "DISABLE"}
-    assert deleted == {"ad_ids": [AD_ID], "deleted": True}
+    assert deleted == {"ad_ids": [AD_ID], "operation_status": "DELETE"}
     assert [request.url.path for request in requests] == [
         AD_CREATE_PATH,
         AD_UPDATE_PATH,
@@ -119,13 +119,16 @@ def _install_business_client(
     return requests
 
 
-def _cassette_name(path: str) -> str:
+def _cassette_name(request: httpx.Request) -> str:
+    if request.url.path == AD_STATUS_UPDATE_PATH:
+        operation_status = _json_body(request)["operation_status"]
+        if operation_status == "DELETE":
+            return "delete_ad.yaml"
+        return "update_ad_status.yaml"
     return {
         AD_CREATE_PATH: "create_single_video.yaml",
         AD_UPDATE_PATH: "update_ad.yaml",
-        AD_STATUS_UPDATE_PATH: "update_ad_status.yaml",
-        AD_DELETE_PATH: "delete_ad.yaml",
-    }[path]
+    }[request.url.path]
 
 
 def _cassette_response(name: str, request: httpx.Request) -> httpx.Response:

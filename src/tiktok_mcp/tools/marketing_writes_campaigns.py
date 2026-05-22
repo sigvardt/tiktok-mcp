@@ -39,7 +39,7 @@ ToolReturnT = TypeVar("ToolReturnT")
 CAMPAIGN_CREATE_PATH = "/open_api/v1.3/campaign/create/"
 CAMPAIGN_UPDATE_PATH = "/open_api/v1.3/campaign/update/"
 CAMPAIGN_STATUS_UPDATE_PATH = "/open_api/v1.3/campaign/status/update/"
-CAMPAIGN_DELETE_PATH = "/open_api/v1.3/campaign/delete/"
+CAMPAIGN_DELETE_PATH = CAMPAIGN_STATUS_UPDATE_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +276,7 @@ async def delete_campaign(
     payload = await _post_campaign_write(
         params.alias,
         CAMPAIGN_DELETE_PATH,
-        _request_payload(params, exclude={"alias"}),
+        _delete_payload(params),
     )
     result = _campaign_result(
         payload,
@@ -331,6 +331,12 @@ async def _load_app_credentials(
 
 def _request_payload(model: BaseModel, *, exclude: set[str]) -> JsonObject:
     return cast(JsonObject, model.model_dump(exclude=exclude, exclude_none=True, mode="json"))
+
+
+def _delete_payload(params: DeleteCampaignRequest) -> JsonObject:
+    payload = _request_payload(params, exclude={"alias"})
+    payload["operation_status"] = "DELETE"
+    return payload
 
 
 def _campaign_result(
