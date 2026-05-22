@@ -159,6 +159,13 @@ def _build_comments_client(alias: str) -> CommentBusinessClientContext:
 
 
 class _CommentsClientFactory:
+    (
+        "Protocol used for test injection of MockTransport-backed clients. "
+        "NOT a factory pattern — it's a structural typing hook so respx tests "
+        "can substitute a transport without monkeypatching the production "
+        "client constructor."
+    )
+
     def __init__(self, alias: str) -> None:
         self._alias: str = alias
         self._client: BusinessAPIClient | None = None

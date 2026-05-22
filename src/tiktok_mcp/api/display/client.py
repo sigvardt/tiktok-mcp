@@ -506,6 +506,8 @@ def _parse_retry_after(value: str | None) -> float | None:
     try:
         return max(0.0, float(value))
     except ValueError:
+        # Retry-After header value was not an integer; fall through to default
+        # backoff calculated via tenacity. No body access — header was malformed.
         pass
     try:
         retry_at = parsedate_to_datetime(value)

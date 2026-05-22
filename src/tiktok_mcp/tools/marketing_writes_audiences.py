@@ -72,8 +72,14 @@ async def create_custom_audience(
         "custom_audience_name": audience_name,
         "match_keys": json.dumps(match_keys, separators=(",", ":")),
     }
+    # `HashedAudienceCSVStream` is structurally a `BinaryIO` (`read`/`seek`/`tell`),
+    # but basedpyright cannot infer that duck-typed contract here.
     files: RequestFiles = {
-        "file": ("audience.csv", cast(BinaryIO, upload_stream), "text/csv")
+        "file": (
+            "audience.csv",
+            cast(BinaryIO, upload_stream),  # pyright: ignore[reportInvalidCast]  # noqa
+            "text/csv",
+        )
     }
     async with await _build_business_client(alias) as client:
         payload = await client.post(CREATE_CUSTOM_AUDIENCE_PATH, data=data, files=files)

@@ -7,7 +7,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from types import TracebackType
-from typing import Any, ClassVar, Self, TypeVar, cast
+from typing import Any, ClassVar, Self, TypeVar
 
 import httpx
 from httpx._types import RequestData, RequestFiles
@@ -447,6 +447,8 @@ def _parse_retry_after(value: str | None) -> float | None:
     try:
         return max(float(stripped), 0.0)
     except ValueError:
+        # Retry-After header value was not an integer; fall through to default
+        # backoff calculated via tenacity. No body access — header was malformed.
         pass
 
     try:
@@ -532,7 +534,8 @@ def _optional_int(payload: Mapping[str, Any], key: str) -> int | None:
             message=msg,
             context={"endpoint": BusinessAPIClient.REFRESH_PATH},
         )
-    return cast(int, value)
+    assert isinstance(value, int)
+    return value
 
 
 __all__ = ["BusinessAPIClient"]
