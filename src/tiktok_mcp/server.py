@@ -25,6 +25,7 @@ from tiktok_mcp.tools import marketing_read as _marketing_read  # noqa: E402,F40
 from tiktok_mcp.tools import marketing_writes_adgroups as _marketing_writes_adgroups  # noqa: E402,F401
 from tiktok_mcp.tools import posting_read as _posting_read  # noqa: E402,F401
 from tiktok_mcp.tools import rate_limit as _rate_limit  # noqa: E402,F401
+from tiktok_mcp.tools import marketing_writes_campaigns as _marketing_writes_campaigns  # noqa: E402,F401
 
 
 def main() -> None:

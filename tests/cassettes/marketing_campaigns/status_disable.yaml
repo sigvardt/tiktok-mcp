@@ -1,0 +1,20 @@
+interactions:
+- request:
+    body: '{"advertiser_id":"7642629596042543111","campaign_ids":["1733456789012345"],"operation_status":"DISABLE"}'
+    headers:
+      Access-Token:
+      - REDACTED
+    method: POST
+    uri: https://business-api.tiktok.com/open_api/v1.3/campaign/status/update/
+  response:
+    body:
+      string: '{"code":0,"message":"OK","request_id":"req-campaign-status","data":{"campaign_ids":["1733456789012345"],"modify_time":"2026-05-22 12:20:00","operation_status":"DISABLE","request_id":"req-campaign-status"}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-campaign-status
+    status:
+      code: 200
+      message: OK
+version: 1
