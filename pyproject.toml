@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.27", "hatch-vcs>=0.5"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tiktok-mcp"
+dynamic = ["version"]
+description = "TikTok MCP server: Display, Marketing, Business Organic, Content Posting APIs for Claude Desktop"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Signikant", email = "[email protected]" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+  "mcp[cli]>=1.10,<2",
+  "httpx>=0.27,<1",
+  "pydantic>=2.7,<3",
+  "pydantic-settings>=2.4,<3",
+  "keyring>=25,<26",
+  "cryptography>=42,<46",
+  "platformdirs>=4,<5",
+  "tenacity>=8.5,<10",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9", "pytest-asyncio>=0.24,<2", "vcrpy>=7,<8", "freezegun>=1.5,<2"]
+dev = [
+  "tiktok-mcp[test]",
+  "ruff>=0.6,<1",
+  "mypy>=1.11,<2",
+]
+
+[project.urls]
+Homepage = "https://github.com/signikant/tiktok-mcp"
+Repository = "https://github.com/signikant/tiktok-mcp"
+Issues = "https://github.com/signikant/tiktok-mcp/issues"
+Changelog = "https://github.com/signikant/tiktok-mcp/blob/main/CHANGELOG.md"
+
+[project.scripts]
+tiktok-mcp = "tiktok_mcp.server:main"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/tiktok_mcp/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tiktok_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/", "tests/", "README.md", "LICENSE", "pyproject.toml", "CHANGELOG.md"]

@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+.installed.cfg
+build/
+dist/
+
+# venv
+.venv/
+venv/
+env/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+.mypy_cache/
+.ruff_cache/
+
+# hatch-vcs generated
+src/tiktok_mcp/_version.py
+
+# local-only cassettes (recorded against your own sandbox; not for commit)
+tests/cassettes/.local/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# OMO framework state (not committed to project)
+.playwright-mcp/
