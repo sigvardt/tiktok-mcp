@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+# operator: replace with "tiktok-mcp" or "tiktok-complete-mcp" per spikes/s2_results.md package-name decision; this fallback is intentional
+name = "REPLACE_WITH_CHOSEN_NAME"
+version = "0.0.0a0"
+requires-python = ">=3.11"
+description = "S2 OIDC spike — throwaway"
+readme = "README.md"
+license = "MIT"
+
+[project.scripts]
+tiktok-mcp = "tiktok_mcp.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tiktok_mcp"]

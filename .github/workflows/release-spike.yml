@@ -1,0 +1,48 @@
+name: release-spike
+
+on:
+  push:
+    tags: ['vSPIKE-*']
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-spike:
+    runs-on: ubuntu-latest
+    # Security: keep the OIDC grant scoped to this publish job only instead of widening it at workflow level.
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: pypi
+      url: https://test.pypi.org/p/tiktok-mcp
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          # The spike is static-versioned, but the real Wave 1 pipeline uses hatch-vcs, so keep full history for the workflow we will copy from.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build spike distribution
+        run: cd spikes/release-spike && uv build
+
+      - name: Smoke-test spike CLI
+        run: uv run --project spikes/release-spike tiktok-mcp --version
+
+      - name: Publish spike to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Route this spike to TestPyPI only; production PyPI publishing is deferred to Wave 5.
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: spikes/release-spike/dist/
+          verify-metadata: true
+          print-hash: true
+          # Intentionally omit password and username inputs: OIDC trusted publishing is the auth path, and password would force token auth.

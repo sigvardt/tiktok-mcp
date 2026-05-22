@@ -1,0 +1,1 @@
+Throwaway scaffolding for S2 OIDC spike. Will be deleted after rc validation per plan T39/T40 cleanup. Do NOT use as a packaging reference — the real Wave 1 T1 scaffolding uses hatch-vcs (dynamic version). This spike uses static version on purpose to keep it minimal.
