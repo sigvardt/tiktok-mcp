@@ -10,6 +10,7 @@ from types import TracebackType
 from typing import Any, ClassVar, Self, TypeVar, cast
 
 import httpx
+from httpx._types import RequestData, RequestFiles
 from pydantic import BaseModel, SecretStr
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception, stop_after_attempt
 
@@ -112,6 +113,8 @@ class BusinessAPIClient:
         *,
         params: QueryParams | None = None,
         json: object | None = None,
+        data: RequestData | None = None,
+        files: RequestFiles | None = None,
         data_model: type[DataModelT] | None = None,
         idempotent: bool = False,
     ) -> DataModelT | dict[str, Any]:
@@ -120,6 +123,8 @@ class BusinessAPIClient:
             path,
             params=params,
             json=json,
+            data=data,
+            files=files,
             data_model=data_model,
             idempotent=idempotent,
         )
@@ -131,6 +136,8 @@ class BusinessAPIClient:
         *,
         params: QueryParams | None = None,
         json: object | None = None,
+        data: RequestData | None = None,
+        files: RequestFiles | None = None,
         data_model: type[DataModelT] | None = None,
         idempotent: bool | None = None,
     ) -> DataModelT | dict[str, Any]:
@@ -140,6 +147,8 @@ class BusinessAPIClient:
                 path,
                 params=params,
                 json=json,
+                data=data,
+                files=files,
                 data_model=data_model,
                 idempotent=idempotent,
             )
@@ -152,6 +161,8 @@ class BusinessAPIClient:
                 path,
                 params=params,
                 json=json,
+                data=data,
+                files=files,
                 data_model=data_model,
                 idempotent=idempotent,
             )
@@ -163,6 +174,8 @@ class BusinessAPIClient:
         *,
         params: QueryParams | None,
         json: object | None,
+        data: RequestData | None,
+        files: RequestFiles | None,
         data_model: type[DataModelT] | None,
         idempotent: bool | None,
     ) -> DataModelT | dict[str, Any]:
@@ -174,6 +187,8 @@ class BusinessAPIClient:
                 path,
                 params=params,
                 json=json,
+                data=data,
+                files=files,
                 data_model=data_model,
             )
 
@@ -190,6 +205,8 @@ class BusinessAPIClient:
                     path,
                     params=params,
                     json=json,
+                    data=data,
+                    files=files,
                     data_model=data_model,
                 )
         raise AssertionError("unreachable retry state")
@@ -201,6 +218,8 @@ class BusinessAPIClient:
         *,
         params: QueryParams | None,
         json: object | None,
+        data: RequestData | None,
+        files: RequestFiles | None,
         data_model: type[DataModelT] | None,
     ) -> DataModelT | dict[str, Any]:
         _ = _RETRY_AFTER_SECONDS.set(None)
@@ -211,6 +230,8 @@ class BusinessAPIClient:
             path,
             params=params,
             json=json,
+            data=data,
+            files=files,
             headers=self._auth_headers(tokens),
         )
         decoded = decode_business_response(response, data_model=data_model)
@@ -225,6 +246,8 @@ class BusinessAPIClient:
         *,
         params: QueryParams | None,
         json: object | None,
+        data: RequestData | None,
+        files: RequestFiles | None,
         data_model: type[DataModelT] | None,
         idempotent: bool | None,
     ) -> DataModelT | dict[str, Any]:
@@ -248,6 +271,8 @@ class BusinessAPIClient:
                 path,
                 params=params,
                 json=json,
+                data=data,
+                files=files,
                 data_model=data_model,
                 idempotent=idempotent,
             )

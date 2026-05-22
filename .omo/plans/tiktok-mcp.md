@@ -2266,7 +2266,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `feat(marketing): ad CRUD write tools` — `src/tiktok_mcp/tools/marketing_writes_ads.py`, models, tests, cassettes
 
-- [ ] 23. Marketing API write tools: Custom Audience uploads
+- [x] 23. Marketing API write tools: Custom Audience uploads
 
   **What to do**:
   - `tools/marketing_writes_audiences.py` exposing `create_custom_audience` (file upload), `update_custom_audience_name`, `delete_custom_audience` against `/open_api/v1.3/dmp/custom_audience/create/`, `/dmp/custom_audience/update/`, `/dmp/custom_audience/delete/`.

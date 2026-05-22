@@ -1,0 +1,20 @@
+interactions:
+- request:
+    body: '[SCRUBBED_MULTIPART_HASHED_AUDIENCE_UPLOAD]'
+    headers:
+      Access-Token:
+      - REDACTED
+    method: POST
+    uri: https://business-api.tiktok.com/open_api/v1.3/dmp/custom_audience/create/
+  response:
+    body:
+      string: '{"code":0,"message":"OK","request_id":"req-audience-create","data":{"custom_audience_id":"audience-123","custom_audience_name":"qa-test-10","status":"READY"}}'
+    headers:
+      Content-Type:
+      - application/json
+      x-tt-logid:
+      - req-audience-create
+    status:
+      code: 200
+      message: OK
+version: 1

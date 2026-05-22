@@ -19,15 +19,21 @@ app: FastMCP = FastMCP("tiktok-mcp")
 from tiktok_mcp.tools import accounts as _accounts  # noqa: E402,F401
 from tiktok_mcp.tools import app_credentials as _app_credentials  # noqa: E402,F401
 from tiktok_mcp.tools import comments_read as _comments_read  # noqa: E402,F401
-from tiktok_mcp.tools import comments_writes as _comments_writes  # noqa: E402,F401
-from tiktok_mcp.tools import marketing_reports as _marketing_reports  # noqa: E402,F401
 from tiktok_mcp.tools import display_read as _display_read  # noqa: E402,F401
 from tiktok_mcp.tools import marketing_read as _marketing_read  # noqa: E402,F401
+from tiktok_mcp.tools import marketing_reports as _marketing_reports  # noqa: E402,F401
+from tiktok_mcp.tools import (  # noqa: E402,F401
+    marketing_writes_adgroups as _marketing_writes_adgroups,
+)
 from tiktok_mcp.tools import marketing_writes_ads as _marketing_writes_ads  # noqa: E402,F401
-from tiktok_mcp.tools import marketing_writes_adgroups as _marketing_writes_adgroups  # noqa: E402,F401
+from tiktok_mcp.tools import (  # noqa: E402,F401
+    marketing_writes_audiences as _marketing_writes_audiences,
+)
+from tiktok_mcp.tools import (  # noqa: E402,F401
+    marketing_writes_campaigns as _marketing_writes_campaigns,
+)
 from tiktok_mcp.tools import posting_read as _posting_read  # noqa: E402,F401
 from tiktok_mcp.tools import rate_limit as _rate_limit  # noqa: E402,F401
-from tiktok_mcp.tools import marketing_writes_campaigns as _marketing_writes_campaigns  # noqa: E402,F401
 
 
 def main() -> None:

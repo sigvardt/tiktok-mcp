@@ -152,4 +152,9 @@ mangled in transit. The session context provides the canonical value.
 - Reply text validation happens before client construction or HTTP: `len()` must be at most 150, surrogate code points are rejected, and the accepted body is NFC-normalized.
 - Reply/comment text must stay out of INFO/WARN logs and committed cassettes. Opt-in DEBUG logging is still gated by `TIKTOK_MCP_LOG_COMMENT_BODIES=1`, and write cassettes scrub both response and request `text`/`comment_text` fields.
 - v0.1 keeps comment/account ownership validation as a pre-HTTP hook because T17 shipped list/reply-list only and no single-comment lookup endpoint; replace the hook with a live lookup if TikTok exposes one later.
+## [2026-05-22T13:54:08Z] Task: T23
+
+- Custom Audience uploads stream plaintext CSV rows through `HashedAudienceCSVStream`, lower/trim emails, strip phone separators, SHA-256 hash in memory, and hand httpx a reusable file-like object so an auth-refresh retry can seek back to the start without writing hashes to disk.
+- Audience upload path validation rejects network URLs, raw `..` segments, non-files, files outside both `Path.home()` and `Path.cwd()`, and files over 100MB before constructing the Business API client, so invalid-path tests make zero outbound HTTP.
+- Audience upload INFO logging should stay to structured metadata only: `filename_hash`, `row_count_estimate`, and `file_size_bytes`; tests assert fixture plaintext emails never appear in caplog or multipart bodies.
 
