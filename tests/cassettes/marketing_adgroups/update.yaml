@@ -1,6 +1,6 @@
 interactions:
 - request:
-    body: '{"advertiser_id":"advertiser-123","adgroup_id":"adgroup-789","adgroup_name":"Nordic Retargeting","budget":150.0,"targeting":{"locations":["DK","FI"]}}'
+    body: '{"advertiser_id":"advertiser-123","adgroup_id":"adgroup-789","adgroup_name":"Nordic Retargeting","budget":150.0,"location_ids":["2623032","660013"]}'
     headers:
       Access-Token:
       - REDACTED

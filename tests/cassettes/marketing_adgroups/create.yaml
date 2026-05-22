@@ -1,6 +1,6 @@
 interactions:
 - request:
-    body: '{"advertiser_id":"advertiser-123","campaign_id":"campaign-456","adgroup_name":"Nordic Prospecting","placement_type":"PLACEMENT_TYPE_AUTOMATIC","schedule_type":"SCHEDULE_START_END","billing_event":"CPC","optimization_goal":"CLICK","bid_type":"BID_TYPE_CUSTOM","budget":100.0,"targeting":{"locations":["NO","SE"],"age_groups":["AGE_25_34"]},"bid_price":2.5,"audience_ids":["audience-1"]}'
+    body: '{"advertiser_id":"advertiser-123","campaign_id":"campaign-456","adgroup_name":"Nordic Prospecting","placement_type":"PLACEMENT_TYPE_AUTOMATIC","schedule_type":"SCHEDULE_START_END","schedule_start_time":"2026-05-23 00:00:00","billing_event":"CPC","optimization_goal":"CLICK","bid_type":"BID_TYPE_CUSTOM","budget_mode":"BUDGET_MODE_DAY","budget":100.0,"promotion_type":"WEBSITE","schedule_end_time":"2026-05-30 00:00:00","bid_price":2.5,"audience_ids":["audience-1"],"location_ids":["3144096","2661886"],"age_groups":["AGE_25_34"]}'
     headers:
       Access-Token:
       - REDACTED

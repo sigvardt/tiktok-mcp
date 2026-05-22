@@ -54,11 +54,15 @@ async def test_adgroup_crud_happy_path_with_cassettes(monkeypatch: pytest.Monkey
         "Nordic Prospecting",
         "PLACEMENT_TYPE_AUTOMATIC",
         "SCHEDULE_START_END",
+        "2026-05-23 00:00:00",
         "CPC",
         "CLICK",
         "BID_TYPE_CUSTOM",
+        "BUDGET_MODE_DAY",
         100.0,
-        {"locations": ["NO", "SE"], "age_groups": ["AGE_25_34"]},
+        {"location_ids": ["3144096", "2661886"], "age_groups": ["AGE_25_34"]},
+        promotion_type="WEBSITE",
+        schedule_end_time="2026-05-30 00:00:00",
         bid_price=2.5,
         audience_ids=["audience-1"],
     )
@@ -68,7 +72,7 @@ async def test_adgroup_crud_happy_path_with_cassettes(monkeypatch: pytest.Monkey
         ADGROUP_ID,
         adgroup_name="Nordic Retargeting",
         budget=150.0,
-        targeting={"locations": ["DK", "FI"]},
+        targeting={"location_ids": ["2623032", "660013"]},
     )
     paused = await update_adgroup_status(
         ALIAS,

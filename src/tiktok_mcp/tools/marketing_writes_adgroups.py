@@ -31,7 +31,6 @@ ADGROUP_UPDATE_PATH = "/open_api/v1.3/adgroup/update/"
 ADGROUP_STATUS_UPDATE_PATH = "/open_api/v1.3/adgroup/status/update/"
 ADGROUP_DELETE_PATH = "/open_api/v1.3/adgroup/delete/"
 
-NordicCountryCode = Literal["NO", "SE", "DK", "FI"]
 OperationStatus = Literal["ENABLE", "DISABLE", "DELETE"]
 JsonObject = dict[str, object]
 
@@ -39,7 +38,8 @@ JsonObject = dict[str, object]
 class TargetingBlock(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
-    locations: list[NordicCountryCode] = Field(min_length=1)
+    location_ids: list[str] | None = Field(default=None, min_length=1)
+    zipcode_ids: list[str] | None = Field(default=None, min_length=1)
     genders: list[str] | None = None
     age_groups: list[str] | None = None
     languages: list[str] | None = None
@@ -58,13 +58,27 @@ class CreateAdGroupRequest(BaseModel):
     adgroup_name: str = Field(min_length=1)
     placement_type: str = Field(min_length=1)
     schedule_type: str = Field(min_length=1)
+    schedule_start_time: str = Field(min_length=1)
     billing_event: str = Field(min_length=1)
     optimization_goal: str = Field(min_length=1)
     bid_type: str = Field(min_length=1)
+    budget_mode: str = Field(min_length=1)
     budget: float = Field(gt=0)
     targeting: TargetingBlock
+    promotion_type: str | None = Field(default=None, min_length=1)
+    schedule_end_time: str | None = Field(default=None, min_length=1)
     bid_price: float | None = Field(default=None, ge=0)
     audience_ids: list[str] | None = None
+
+    @model_validator(mode="after")
+    def require_schedule_end_for_start_end(self) -> Self:
+        if self.schedule_type == "SCHEDULE_START_END" and self.schedule_end_time is None:
+            raise ValueError(
+                "schedule_end_time is required when schedule_type is SCHEDULE_START_END"
+            )
+        if self.targeting.location_ids is None and self.targeting.zipcode_ids is None:
+            raise ValueError("targeting requires location_ids or zipcode_ids")
+        return self
 
 
 class UpdateAdGroupRequest(BaseModel):
@@ -131,11 +145,15 @@ async def create_adgroup(
     adgroup_name: str,
     placement_type: str,
     schedule_type: str,
+    schedule_start_time: str,
     billing_event: str,
     optimization_goal: str,
     bid_type: str,
+    budget_mode: str,
     budget: float,
     targeting: dict[str, object],
+    promotion_type: str | None = None,
+    schedule_end_time: str | None = None,
     bid_price: float | None = None,
     audience_ids: list[str] | None = None,
 ) -> JsonObject:
@@ -148,11 +166,15 @@ async def create_adgroup(
                 "adgroup_name": adgroup_name,
                 "placement_type": placement_type,
                 "schedule_type": schedule_type,
+                "schedule_start_time": schedule_start_time,
                 "billing_event": billing_event,
                 "optimization_goal": optimization_goal,
                 "bid_type": bid_type,
+                "budget_mode": budget_mode,
                 "budget": budget,
                 "targeting": targeting,
+                "promotion_type": promotion_type,
+                "schedule_end_time": schedule_end_time,
                 "bid_price": bid_price,
                 "audience_ids": audience_ids,
             }
@@ -162,7 +184,7 @@ async def create_adgroup(
     return await _post_adgroup_payload(
         params.alias,
         ADGROUP_CREATE_PATH,
-        _payload_from_model(params, exclude={"alias"}),
+        _adgroup_payload(params, exclude={"alias"}),
     )
 
 
@@ -206,7 +228,7 @@ async def update_adgroup(
     return await _post_adgroup_payload(
         params.alias,
         ADGROUP_UPDATE_PATH,
-        _payload_from_model(params, exclude={"alias"}),
+        _adgroup_payload(params, exclude={"alias"}),
     )
 
 
@@ -264,6 +286,14 @@ async def _post_adgroup_payload(alias: str, path: str, payload: JsonObject) -> J
 
 def _payload_from_model(model: BaseModel, *, exclude: set[str]) -> JsonObject:
     return cast(JsonObject, model.model_dump(mode="json", exclude=exclude, exclude_none=True))
+
+
+def _adgroup_payload(model: BaseModel, *, exclude: set[str]) -> JsonObject:
+    payload = _payload_from_model(model, exclude=exclude)
+    targeting = payload.pop("targeting", None)
+    if isinstance(targeting, dict):
+        payload.update(cast(dict[str, object], targeting))
+    return payload
 
 
 def _validation_error(exc: ValidationError) -> JsonObject:

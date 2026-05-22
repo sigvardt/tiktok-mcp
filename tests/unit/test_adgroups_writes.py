@@ -10,7 +10,7 @@ from typing import cast
 
 import httpx
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from tiktok_mcp.api.business import BusinessAPIClient
 from tiktok_mcp.server import app
@@ -20,6 +20,7 @@ from tiktok_mcp.tools.marketing_writes_adgroups import (
     ADGROUP_DELETE_PATH,
     ADGROUP_STATUS_UPDATE_PATH,
     ADGROUP_UPDATE_PATH,
+    CreateAdGroupRequest,
     JsonObject,
     create_adgroup,
     delete_adgroup,
@@ -49,11 +50,15 @@ async def test_blocked(env_value: str | None, monkeypatch: pytest.MonkeyPatch) -
         "Nordic Prospecting",
         "PLACEMENT_TYPE_AUTOMATIC",
         "SCHEDULE_START_END",
+        "2026-05-23 00:00:00",
         "CPC",
         "CLICK",
         "BID_TYPE_CUSTOM",
+        "BUDGET_MODE_DAY",
         100.0,
-        _targeting(["NO"]),
+        _targeting(["3144096"]),
+        promotion_type="WEBSITE",
+        schedule_end_time="2026-05-30 00:00:00",
     )
     update_result = await update_adgroup(ALIAS, ADVERTISER_ID, ADGROUP_ID, budget=150.0)
     status_result = await update_adgroup_status(
@@ -91,15 +96,17 @@ async def test_create_adgroup_posts_required_payload(monkeypatch: pytest.MonkeyP
             "adgroup_name": "Nordic Prospecting",
             "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
             "schedule_type": "SCHEDULE_START_END",
+            "schedule_start_time": "2026-05-23 00:00:00",
+            "schedule_end_time": "2026-05-30 00:00:00",
             "billing_event": "CPC",
             "optimization_goal": "CLICK",
             "bid_type": "BID_TYPE_CUSTOM",
+            "budget_mode": "BUDGET_MODE_DAY",
             "budget": 100.0,
-            "targeting": {
-                "locations": ["NO", "SE"],
-                "genders": ["GENDER_FEMALE"],
-                "languages": ["nb"],
-            },
+            "promotion_type": "WEBSITE",
+            "location_ids": ["3144096", "2661886"],
+            "genders": ["GENDER_FEMALE"],
+            "languages": ["nb"],
             "bid_price": 2.5,
             "audience_ids": ["audience-1"],
         }
@@ -117,11 +124,19 @@ async def test_create_adgroup_posts_required_payload(monkeypatch: pytest.MonkeyP
         "Nordic Prospecting",
         "PLACEMENT_TYPE_AUTOMATIC",
         "SCHEDULE_START_END",
+        "2026-05-23 00:00:00",
         "CPC",
         "CLICK",
         "BID_TYPE_CUSTOM",
+        "BUDGET_MODE_DAY",
         100.0,
-        {"locations": ["NO", "SE"], "genders": ["GENDER_FEMALE"], "languages": ["nb"]},
+        {
+            "location_ids": ["3144096", "2661886"],
+            "genders": ["GENDER_FEMALE"],
+            "languages": ["nb"],
+        },
+        promotion_type="WEBSITE",
+        schedule_end_time="2026-05-30 00:00:00",
         bid_price=2.5,
         audience_ids=["audience-1"],
     )
@@ -142,7 +157,8 @@ async def test_update_adgroup_posts_partial_payload(monkeypatch: pytest.MonkeyPa
             "adgroup_id": ADGROUP_ID,
             "adgroup_name": "Retargeting DK FI",
             "budget": 150.0,
-            "targeting": {"locations": ["DK", "FI"], "network_types": ["WIFI"]},
+            "location_ids": ["2623032", "660013"],
+            "network_types": ["WIFI"],
         }
         return _business_response(request, {"adgroup_id": ADGROUP_ID, "modify_time": "now"})
 
@@ -154,7 +170,7 @@ async def test_update_adgroup_posts_partial_payload(monkeypatch: pytest.MonkeyPa
         ADGROUP_ID,
         adgroup_name="Retargeting DK FI",
         budget=150.0,
-        targeting={"locations": ["DK", "FI"], "network_types": ["WIFI"]},
+        targeting={"location_ids": ["2623032", "660013"], "network_types": ["WIFI"]},
     )
 
     assert len(requests) == 1
@@ -197,7 +213,7 @@ async def test_status_and_delete_post_adgroup_ids(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_geo_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_targeting_validation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
     build_calls = _install_forbidden_business_client(monkeypatch)
 
@@ -208,19 +224,25 @@ async def test_geo_validation(monkeypatch: pytest.MonkeyPatch) -> None:
         "Invalid Geo",
         "PLACEMENT_TYPE_AUTOMATIC",
         "SCHEDULE_START_END",
+        "2026-05-23 00:00:00",
         "CPC",
         "CLICK",
         "BID_TYPE_CUSTOM",
+        "BUDGET_MODE_DAY",
         100.0,
-        _targeting(["XX"]),
+        {"age_groups": ["AGE_25_34"]},
+        promotion_type="WEBSITE",
+        schedule_end_time="2026-05-30 00:00:00",
     )
 
     assert invalid_result["error"] == "validation_error"
-    assert "locations" in str(invalid_result["details"])
+    assert "location_ids or zipcode_ids" in str(invalid_result["details"])
     assert build_calls == []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert _json_body(request)["targeting"] == {"locations": ["NO", "SE"]}
+        body = _json_body(request)
+        assert body["location_ids"] == ["3144096", "2661886"]
+        assert "targeting" not in body
         return _business_response(request, {"adgroup_id": ADGROUP_ID})
 
     requests = _install_business_client(monkeypatch, handler)
@@ -231,15 +253,50 @@ async def test_geo_validation(monkeypatch: pytest.MonkeyPatch) -> None:
         "Valid Geo",
         "PLACEMENT_TYPE_AUTOMATIC",
         "SCHEDULE_START_END",
+        "2026-05-23 00:00:00",
         "CPC",
         "CLICK",
         "BID_TYPE_CUSTOM",
+        "BUDGET_MODE_DAY",
         100.0,
-        _targeting(["NO", "SE"]),
+        _targeting(["3144096", "2661886"]),
+        promotion_type="WEBSITE",
+        schedule_end_time="2026-05-30 00:00:00",
     )
 
     assert len(requests) == 1
     assert valid_result["adgroup_id"] == ADGROUP_ID
+
+
+def test_create_adgroup_requires_schedule_start_time() -> None:
+    valid_payload: JsonObject = {
+        "alias": ALIAS,
+        "advertiser_id": ADVERTISER_ID,
+        "campaign_id": CAMPAIGN_ID,
+        "adgroup_name": "Nordic Prospecting",
+        "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
+        "schedule_type": "SCHEDULE_START_END",
+        "schedule_start_time": "2026-05-23 00:00:00",
+        "schedule_end_time": "2026-05-30 00:00:00",
+        "billing_event": "CPC",
+        "optimization_goal": "CLICK",
+        "bid_type": "BID_TYPE_CUSTOM",
+        "budget_mode": "BUDGET_MODE_DAY",
+        "budget": 100.0,
+        "targeting": {"location_ids": ["3144096"]},
+    }
+
+    missing_start_time = dict(valid_payload)
+    del missing_start_time["schedule_start_time"]
+    with pytest.raises(ValidationError) as missing_error:
+        _ = CreateAdGroupRequest.model_validate(missing_start_time)
+    assert "schedule_start_time" in str(missing_error.value)
+
+    invalid_start_time = dict(valid_payload)
+    invalid_start_time["schedule_start_time"] = 123
+    with pytest.raises(ValidationError) as type_error:
+        _ = CreateAdGroupRequest.model_validate(invalid_start_time)
+    assert "schedule_start_time" in str(type_error.value)
 
 
 @pytest.mark.asyncio
@@ -267,8 +324,8 @@ def _set_writes_env(monkeypatch: pytest.MonkeyPatch, value: str | None) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", value)
 
 
-def _targeting(locations: list[str]) -> JsonObject:
-    return {"locations": locations}
+def _targeting(location_ids: list[str]) -> JsonObject:
+    return {"location_ids": location_ids}
 
 
 def _install_business_client(
