@@ -2628,7 +2628,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `feat(posting): pull-from-url + photo upload tools (drafts default)` — `src/tiktok_mcp/tools/posting_writes_pull_and_photo.py`, tests, cassettes
 
-- [ ] 28. Content Posting API: draft management writes
+- [x] 28. Content Posting API: draft management writes
 
   **What to do**:
   - `tools/posting_writes_drafts.py` exposing:

@@ -1,0 +1,20 @@
+interactions:
+- request:
+    method: POST
+    uri: https://open.tiktokapis.com/v2/post/publish/draft/delete/
+    body: '{"publish_id":"draft-fixture-1"}'
+    headers:
+      Authorization:
+      - REDACTED
+      Content-Type:
+      - application/json
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{"data":{"publish_id":"draft-fixture-1","deleted":true}}'
+version: 1

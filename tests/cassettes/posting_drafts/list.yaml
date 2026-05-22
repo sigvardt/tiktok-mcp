@@ -1,0 +1,18 @@
+interactions:
+- request:
+    method: POST
+    uri: https://open.tiktokapis.com/v2/post/publish/draft/list/
+    body: '{}'
+    headers:
+      Authorization:
+      - REDACTED
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{"data":{"endpoint_not_available":true,"reason":"TikTok has not exposed a drafts-list endpoint in v2 as of 2026-05-22","alias":"posting-alias"}}'
+version: 1

@@ -1,0 +1,20 @@
+interactions:
+- request:
+    method: POST
+    uri: https://open.tiktokapis.com/v2/post/publish/draft/publish/
+    body: '{"publish_id":"draft-fixture-1","post_info":{"title":"QA test","privacy_level":"SELF_ONLY"}}'
+    headers:
+      Authorization:
+      - REDACTED
+      Content-Type:
+      - application/json
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json
+    body:
+      string: '{"data":{"publish_id":"draft-fixture-1","status":"PROCESSING_UPLOAD"}}'
+version: 1
