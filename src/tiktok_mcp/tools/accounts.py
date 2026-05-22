@@ -95,7 +95,7 @@ async def add_account(
     if not _valid_alias(suggested_alias):
         return _invalid_alias_error(suggested_alias)
 
-    pkce_verifier = secrets.token_urlsafe(64) if api_type in PKCE_APIS else None
+    pkce_verifier = None
     oauth_state = await state.create_state(
         api_type,
         suggested_alias,
@@ -344,7 +344,9 @@ async def _exchange_code_for_tokens(
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
         await safe_raise_for_status(response)
-        return _json_object(response)
+        payload = _json_object(response)
+        _raise_for_oauth_error(payload)
+        return payload
 
     body = {
         "app_id": credentials.client_id.get_secret_value(),
@@ -483,6 +485,19 @@ def _json_object(response: httpx.Response) -> dict[str, Any]:
         msg = "Token exchange response must be a JSON object."
         raise ValueError(msg)
     return {str(key): value for key, value in payload.items()}
+
+
+def _raise_for_oauth_error(payload: Mapping[str, object]) -> None:
+    tiktok_error = _optional_string_value(payload, "error")
+    if tiktok_error is None:
+        return
+    error_description = _optional_string_value(payload, "error_description")
+    message = error_description or f"TikTok OAuth token exchange failed: {tiktok_error}."
+    context: dict[str, object] = {"tiktok_error": tiktok_error}
+    log_id = _optional_string_value(payload, "log_id")
+    if log_id is not None:
+        context["log_id"] = log_id
+    raise TikTokMCPError("token_exchange_failed", message, context)
 
 
 def _extract_token_values(payload: dict[str, Any]) -> tuple[str, str]:

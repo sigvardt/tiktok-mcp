@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import urllib.parse
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -118,7 +118,7 @@ async def test_add_account_returns_url_with_state_and_alias(
     assert parsed_url.geturl().startswith("https://www.tiktok.com/v2/auth/authorize/")
     assert params["state"] == [response["state"]]
     assert params["redirect_uri"] == [REDIRECT_URI]
-    assert "code_challenge" in params
+    assert "code_challenge" not in params
 
 
 @pytest.mark.asyncio
@@ -240,6 +240,63 @@ async def test_complete_account_login_happy_path(
     assert stored is not None
     account, _tokens = deserialize_account_record(stored)
     assert account.alias == "nordic-display-good"
+
+
+@pytest.mark.asyncio
+async def test_oauth_pkce_token_exchange_success(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = allow_account_changes
+    pkce_verifier = "A" * 43
+    await _store_app_credentials(backend, ApiType.DISPLAY)
+
+    def assert_pkce_request(request: httpx.Request) -> None:
+        body = urllib.parse.parse_qs(request.content.decode())
+        assert body["code_verifier"] == [pkce_verifier]
+        assert body["grant_type"] == ["authorization_code"]
+        assert request.headers["Content-Type"] == "application/x-www-form-urlencoded"
+
+    _mock_token_exchange(monkeypatch, TOKEN_PAYLOAD, assert_request=assert_pkce_request)
+    oauth_state = await create_state(
+        ApiType.DISPLAY,
+        "nordic-display-pkce",
+        pkce_verifier=pkce_verifier,
+    )
+
+    response = await complete_account_login(_redirect_url("synthetic-code", oauth_state.state))
+
+    assert response["alias"] == "nordic-display-pkce"
+    assert response["api_type"] == "display"
+
+
+@pytest.mark.asyncio
+async def test_oauth_error_surfaced(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.DISPLAY)
+    _mock_token_exchange(
+        monkeypatch,
+        {
+            "error": "invalid_request",
+            "error_description": "Code verifier or code challenge is invalid.",
+            "log_id": "oauth-log-id",
+        },
+    )
+    add_response = await add_account(ApiType.DISPLAY, alias="nordic-display-error")
+    redirect = _redirect_url("synthetic-code", str(add_response["state"]))
+
+    response = await complete_account_login(redirect)
+
+    assert response["error"] == "token_exchange_failed"
+    assert response["message"] == "Code verifier or code challenge is invalid."
+    assert response["context"]["tiktok_error"] == "invalid_request"
+    assert response["context"]["log_id"] == "oauth-log-id"
+    assert "missing string field access_token" not in json.dumps(response)
 
 
 @pytest.mark.asyncio
@@ -497,8 +554,15 @@ async def _store_account(
     )
 
 
-def _mock_token_exchange(monkeypatch: pytest.MonkeyPatch, payload: dict[str, object]) -> None:
+def _mock_token_exchange(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, object],
+    *,
+    assert_request: Callable[[httpx.Request], None] | None = None,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
+        if assert_request is not None:
+            assert_request(request)
         return httpx.Response(httpx.codes.OK, json=payload, request=request)
 
     def build_client() -> httpx.AsyncClient:
