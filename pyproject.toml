@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "Signikant", email = "[email protected]" }]
+authors = [{ name = "Signikant", email = "signikant@example.com" }]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
@@ -60,3 +60,24 @@ packages = ["src/tiktok_mcp"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/", "tests/", "README.md", "LICENSE", "pyproject.toml", "CHANGELOG.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+  "live: live HTTP tests (excluded from default CI)",
+  "live_write: live write HTTP tests (gated by TIKTOK_MCP_ALLOW_LIVE_WRITES env)",
+]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+
+[tool.mypy]
+strict = true
+disallow_untyped_defs = true
+python_version = "3.11"
