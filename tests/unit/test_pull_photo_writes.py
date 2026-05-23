@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# pyright: reportMissingTypeStubs=false, reportMissingImports=false, reportAttributeAccessIssue=false
+# pyright: reportMissingTypeStubs=false, reportMissingImports=false, reportAttributeAccessIssue=false, reportPrivateUsage=false
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
 from types import TracebackType
 from typing import cast
@@ -8,6 +8,7 @@ from typing import cast
 import pytest
 
 from tiktok_mcp.api.posting.client import POST_STATUS_PATH
+from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError
 from tiktok_mcp.tools import posting_writes_pull_and_photo as posting_tools
 from tiktok_mcp.tools.posting_writes_pull_and_photo import (
     CANCEL_PUBLISH_PATH,
@@ -22,6 +23,10 @@ from tiktok_mcp.tools.posting_writes_pull_and_photo import (
 
 ALIAS = "posting-alias"
 VIDEO_URL = "https://example.com/sample.mp4"
+UNKNOWN_PUBLISH_ID_OR_EXPIRED_MESSAGE = (
+    "TikTok returned HTTP 400 for this publish_id. The id may be unknown, expired, "
+    "or malformed. Verify the publish_id from a prior upload tool."
+)
 PHOTO_URLS = [
     "https://example.com/photo-1.webp",
     "https://example.com/photo-2.webp",
@@ -40,7 +45,7 @@ async def test_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
-    result = await upload_video_from_url(ALIAS, VIDEO_URL)
+    result = cast(dict[str, object], await upload_video_from_url(ALIAS, VIDEO_URL))
 
     assert result["error"] == "writes_disabled"
     assert result["api"] == "posting"
@@ -54,11 +59,14 @@ async def test_direct_post_requires_post_info(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
-    result = await upload_video_from_url(
-        ALIAS,
-        VIDEO_URL,
-        publish_immediately=True,
-        post_info={"title": "Missing privacy"},
+    result = cast(
+        dict[str, object],
+        await upload_video_from_url(
+            ALIAS,
+            VIDEO_URL,
+            publish_immediately=True,
+            post_info={"title": "Missing privacy"},
+        ),
     )
 
     assert result["error"] == "validation_error"
@@ -77,8 +85,8 @@ async def test_https_only(monkeypatch: pytest.MonkeyPatch, bad_url: str) -> None
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
-    video_result = await upload_video_from_url(ALIAS, bad_url)
-    photo_result = await upload_photo_from_urls(ALIAS, [bad_url])
+    video_result = cast(dict[str, object], await upload_video_from_url(ALIAS, bad_url))
+    photo_result = cast(dict[str, object], await upload_photo_from_urls(ALIAS, [bad_url]))
 
     assert video_result["error"] == "validation_error"
     assert photo_result["error"] == "validation_error"
@@ -92,11 +100,14 @@ async def test_privacy_level_validation(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
-    result = await upload_video_from_url(
-        ALIAS,
-        VIDEO_URL,
-        publish_immediately=True,
-        post_info={"title": "Bad privacy", "privacy_level": "FRIENDS_ONLY"},
+    result = cast(
+        dict[str, object],
+        await upload_video_from_url(
+            ALIAS,
+            VIDEO_URL,
+            publish_immediately=True,
+            post_info={"title": "Bad privacy", "privacy_level": "FRIENDS_ONLY"},
+        ),
     )
 
     assert result["error"] == "validation_error"
@@ -113,10 +124,13 @@ async def test_draft_video_routes_to_inbox_without_post_info(
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
-    result = await upload_video_from_url(
-        ALIAS,
-        VIDEO_URL,
-        post_info={"title": "Ignored draft title", "privacy_level": "SELF_ONLY"},
+    result = cast(
+        dict[str, object],
+        await upload_video_from_url(
+            ALIAS,
+            VIDEO_URL,
+            post_info={"title": "Ignored draft title", "privacy_level": "SELF_ONLY"},
+        ),
     )
 
     assert result["publish_id"] == "publish-draft"
@@ -136,11 +150,14 @@ async def test_direct_video_routes_to_direct_post_with_post_info(
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
-    result = await upload_video_from_url(
-        ALIAS,
-        VIDEO_URL,
-        publish_immediately=True,
-        post_info={"title": "Direct", "privacy_level": "SELF_ONLY"},
+    result = cast(
+        dict[str, object],
+        await upload_video_from_url(
+            ALIAS,
+            VIDEO_URL,
+            publish_immediately=True,
+            post_info={"title": "Direct", "privacy_level": "SELF_ONLY"},
+        ),
     )
 
     assert result["publish_id"] == "publish-direct"
@@ -158,7 +175,7 @@ async def test_photo_urls_build_nested_image_url_array(monkeypatch: pytest.Monke
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
-    result = await upload_photo_from_urls(ALIAS, PHOTO_URLS)
+    result = cast(dict[str, object], await upload_photo_from_urls(ALIAS, PHOTO_URLS))
 
     assert result["publish_id"] == "photo-publish"
     assert fake_client.requests[0][2] == PHOTO_INIT_PATH
@@ -176,15 +193,82 @@ async def test_get_publish_status_uses_cached_alias_once(monkeypatch: pytest.Mon
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
-    _ = await upload_video_from_url(ALIAS, VIDEO_URL)
+    init_result = cast(dict[str, object], await upload_video_from_url(ALIAS, VIDEO_URL))
+    assert init_result["publish_id"] == "publish-123"
 
-    result = await get_publish_status("publish-123")
+    result = cast(dict[str, object], await get_publish_status("publish-123"))
 
     assert result["status"] == "FETCH_IN_PROGRESS"
     assert [request[2] for request in fake_client.requests] == [
         INBOX_VIDEO_INIT_PATH,
         POST_STATUS_PATH,
     ]
+
+
+@pytest.mark.asyncio
+async def test_get_publish_status_returns_unknown_publish_id_envelope_on_status_400(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publish_id = "publish-expired"
+    fake_client = FakePostingClient(
+        publish_id=publish_id,
+        status_error=SanitizedHttpxError(
+            status=400,
+            url_path=POST_STATUS_PATH,
+            request_id="req-400",
+        )
+    )
+    monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
+    monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
+    init_result = cast(dict[str, object], await upload_video_from_url(ALIAS, VIDEO_URL))
+    assert init_result["publish_id"] == publish_id
+
+    result = cast(dict[str, object], await get_publish_status(publish_id))
+
+    assert result == {
+        "error": "unknown_publish_id_or_expired",
+        "tool": "get_publish_status",
+        "publish_id": publish_id,
+        "message": UNKNOWN_PUBLISH_ID_OR_EXPIRED_MESSAGE,
+        "request_id": "req-400",
+    }
+    assert fake_client.requests == [
+        (
+            ALIAS,
+            "POST",
+            INBOX_VIDEO_INIT_PATH,
+            {"source_info": {"source": "PULL_FROM_URL", "video_url": VIDEO_URL}},
+        ),
+        (ALIAS, "POST", POST_STATUS_PATH, {"publish_id": publish_id}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_publish_status_raises_non_400_status_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publish_id = "publish-server-error"
+    fake_client = FakePostingClient(
+        publish_id=publish_id,
+        status_error=SanitizedHttpxError(
+            status=500,
+            url_path=POST_STATUS_PATH,
+            request_id="req-500",
+        )
+    )
+    monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
+    monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
+    init_result = cast(dict[str, object], await upload_video_from_url(ALIAS, VIDEO_URL))
+    assert init_result["publish_id"] == publish_id
+
+    with pytest.raises(SanitizedHttpxError) as exc_info:
+        await get_publish_status(publish_id)
+
+    assert exc_info.value.status == 500
+    assert exc_info.value.url_path == POST_STATUS_PATH
+    assert exc_info.value.request_id == "req-500"
 
 
 @pytest.mark.asyncio
@@ -197,7 +281,7 @@ async def test_cancel_publish_skips_cancel_when_already_terminal(
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
     await posting_tools._remember_publish_alias("publish-terminal", ALIAS)
 
-    result = await cancel_publish("publish-terminal")
+    result = cast(dict[str, object], await cancel_publish("publish-terminal"))
 
     assert result["cancelled"] is False
     assert result["already_terminal"] is True
@@ -216,9 +300,11 @@ class FakePostingClient:
         *,
         publish_id: str = "publish-123",
         status: str = "PROCESSING_UPLOAD",
+        status_error: SanitizedHttpxError | None = None,
     ) -> None:
         self.publish_id: str = publish_id
         self.status: str = status
+        self.status_error: SanitizedHttpxError | None = status_error
         self.requests: list[tuple[str, str, str, dict[str, object]]] = []
 
     async def __aenter__(self) -> FakePostingClient:
@@ -242,6 +328,8 @@ class FakePostingClient:
     ) -> dict[str, object]:
         self.requests.append((alias, method, path, json_body))
         if path == POST_STATUS_PATH:
+            if self.status_error is not None:
+                raise self.status_error
             return {"publish_id": json_body["publish_id"], "status": self.status}
         if path == CANCEL_PUBLISH_PATH:
             return {"cancelled": True}

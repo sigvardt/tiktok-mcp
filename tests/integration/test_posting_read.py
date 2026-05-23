@@ -19,6 +19,7 @@ from tiktok_mcp.api.posting.client import (
     POST_STATUS_PATH,
     PostingAPIClient,
 )
+from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError
 from tiktok_mcp.auth.keychain import account_key, app_creds_key, serialize_account_record
 from tiktok_mcp.observability.rate_limit_tracker import get_posture, reset_tracker
 from tiktok_mcp.tools import posting_read as posting_read_tools
@@ -31,6 +32,10 @@ from tiktok_mcp.types.accounts import Account, AccountStatus, AccountTokens, Api
 from tiktok_mcp.types.errors import RateLimitedError
 
 ALIAS = "posting-alias"
+UNKNOWN_PUBLISH_ID_OR_EXPIRED_MESSAGE = (
+    "TikTok returned HTTP 400 for this publish_id. The id may be unknown, expired, "
+    "or malformed. Verify the publish_id from a prior upload tool."
+)
 
 
 class MemoryBackend:
@@ -259,9 +264,71 @@ async def test_mcp_tools_return_serializable_models(monkeypatch: pytest.MonkeyPa
     assert fake_client.seen == [("status", ALIAS, "publish-tool"), ("creator", ALIAS)]
 
 
+@pytest.mark.asyncio
+async def test_posting_get_post_status_returns_unknown_publish_id_envelope_on_status_400(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publish_id = "v_inbox_url~v2.unknown"
+    fake_client = FakePostingClient(
+        post_status_error=SanitizedHttpxError(
+            status=400,
+            url_path=POST_STATUS_PATH,
+            request_id="req-400",
+        )
+    )
+    monkeypatch.setattr(posting_read_tools, "_build_posting_client", lambda: fake_client)
+
+    result = cast(dict[str, object], await posting_get_post_status(ALIAS, publish_id))
+
+    assert result == {
+        "error": "unknown_publish_id_or_expired",
+        "tool": "posting_get_post_status",
+        "publish_id": publish_id,
+        "message": UNKNOWN_PUBLISH_ID_OR_EXPIRED_MESSAGE,
+        "request_id": "req-400",
+    }
+    assert fake_client.seen == [("status", ALIAS, publish_id)]
+
+
+@pytest.mark.asyncio
+async def test_posting_get_post_status_raises_non_400_status_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_client = FakePostingClient(
+        post_status_error=SanitizedHttpxError(
+            status=500,
+            url_path=POST_STATUS_PATH,
+            request_id="req-500",
+        )
+    )
+    monkeypatch.setattr(posting_read_tools, "_build_posting_client", lambda: fake_client)
+
+    with pytest.raises(SanitizedHttpxError) as exc_info:
+        await posting_get_post_status(ALIAS, "publish-server-error")
+
+    assert exc_info.value.status == 500
+    assert exc_info.value.url_path == POST_STATUS_PATH
+    assert exc_info.value.request_id == "req-500"
+
+
+@pytest.mark.asyncio
+async def test_posting_get_post_status_preserves_success_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_client = FakePostingClient()
+    monkeypatch.setattr(posting_read_tools, "_build_posting_client", lambda: fake_client)
+
+    result = cast(dict[str, object], await posting_get_post_status(ALIAS, "publish-ok"))
+
+    assert result["status"] == "FAILED"
+    assert result["fail_reason"] == "upload_failed"
+    assert fake_client.seen == [("status", ALIAS, "publish-ok")]
+
+
 class FakePostingClient:
-    def __init__(self) -> None:
+    def __init__(self, *, post_status_error: SanitizedHttpxError | None = None) -> None:
         self.seen: list[tuple[str, str] | tuple[str, str, str]] = []
+        self.post_status_error: SanitizedHttpxError | None = post_status_error
 
     async def __aenter__(self) -> Self:
         return self
@@ -276,6 +343,8 @@ class FakePostingClient:
 
     async def get_post_status(self, alias: str, publish_id: str) -> PostStatus:
         self.seen.append(("status", alias, publish_id))
+        if self.post_status_error is not None:
+            raise self.post_status_error
         return PostStatus(status=PostPublishStatus.FAILED, fail_reason="upload_failed")
 
     async def get_creator_info(self, alias: str) -> CreatorInfo:

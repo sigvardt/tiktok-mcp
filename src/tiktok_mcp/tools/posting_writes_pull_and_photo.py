@@ -20,6 +20,7 @@ from pydantic import (
 
 from tiktok_mcp.api.posting import PostingAPIClient
 from tiktok_mcp.api.posting.client import POST_STATUS_PATH
+from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError
 from tiktok_mcp.decorators import mark_read_only, require_writes_enabled
 from tiktok_mcp.server import app
 
@@ -29,6 +30,10 @@ PHOTO_INIT_PATH = "/v2/post/publish/content/init/"
 CANCEL_PUBLISH_PATH = "/v2/post/publish/cancel/"
 MAX_PHOTO_URLS = 35
 PUBLISH_ALIAS_TTL = timedelta(hours=1)
+UNKNOWN_PUBLISH_ID_OR_EXPIRED_MESSAGE = (
+    "TikTok returned HTTP 400 for this publish_id. The id may be unknown, expired, "
+    "or malformed. Verify the publish_id from a prior upload tool."
+)
 
 PrivacyLevel = Literal[
     "MUTUAL_FOLLOW_FRIENDS",
@@ -242,7 +247,16 @@ async def get_publish_status(publish_id: str) -> JsonObject:
     alias = await _publish_alias(params.publish_id)
     if alias is None:
         return _unknown_publish_id(params.publish_id)
-    return await _fetch_publish_status(alias, params.publish_id)
+    try:
+        return await _fetch_publish_status(alias, params.publish_id)
+    except SanitizedHttpxError as exc:
+        if _is_unknown_publish_id_400(exc):
+            return _unknown_publish_id_envelope(
+                tool="get_publish_status",
+                publish_id=params.publish_id,
+                request_id=exc.request_id,
+            )
+        raise
 
 
 @app.tool(annotations=ToolAnnotations(destructiveHint=True))
@@ -361,6 +375,25 @@ def _unknown_publish_id(publish_id: str) -> JsonObject:
             "posting_get_post_status(alias, publish_id) for older publishes."
         ),
         "publish_id": publish_id,
+    }
+
+
+def _is_unknown_publish_id_400(exc: SanitizedHttpxError) -> bool:
+    return exc.status == 400 and exc.url_path == POST_STATUS_PATH
+
+
+def _unknown_publish_id_envelope(
+    *,
+    tool: str,
+    publish_id: str,
+    request_id: str | None,
+) -> JsonObject:
+    return {
+        "error": "unknown_publish_id_or_expired",
+        "tool": tool,
+        "publish_id": publish_id,
+        "message": UNKNOWN_PUBLISH_ID_OR_EXPIRED_MESSAGE,
+        "request_id": request_id,
     }
 
 
