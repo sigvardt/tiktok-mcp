@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # pyright: reportMissingTypeStubs=false
-
 import json
 
 import httpx

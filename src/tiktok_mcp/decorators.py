@@ -18,9 +18,9 @@ _VALID_API_NAMESPACES: frozenset[str] = frozenset(
     {"display", "marketing", "comments", "posting"}
 )
 _LIVE_ACCOUNT_SAFETY_ENV = "TIKTOK_MCP_LIVE_ACCOUNT_SAFETY"
-# Secure by default: unset TIKTOK_MCP_LIVE_ACCOUNT_SAFETY locks Display destructive tools;
-# operators must explicitly set TIKTOK_MCP_LIVE_ACCOUNT_SAFETY= to unlock that surface.
-_DEFAULT_LIVE_ACCOUNT_SAFETY_APIS: frozenset[str] = frozenset({"display"})
+# Secure by default: unset TIKTOK_MCP_LIVE_ACCOUNT_SAFETY locks every live write
+# surface so no OAuthed account can mutate live TikTok state by mistake.
+_DEFAULT_LIVE_ACCOUNT_SAFETY_APIS: frozenset[str] = frozenset(_VALID_API_NAMESPACES)
 _FALSE_VALUES: frozenset[str] = frozenset({"", "0", "false", "no"})
 _TRUE_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "all"})
 _WRITE_PREFIXES: tuple[str, ...] = (
@@ -291,7 +291,7 @@ def _writes_disabled_error(fn: Callable[..., object], api: str) -> dict[str, Any
 def _live_account_safety_locked_error(fn: Callable[..., object], api: str) -> dict[str, Any]:
     env_value = os.environ.get(_LIVE_ACCOUNT_SAFETY_ENV)
     reason = (
-        f"{_LIVE_ACCOUNT_SAFETY_ENV} is unset, so its secure default locks 'display'."
+        f"{_LIVE_ACCOUNT_SAFETY_ENV} is unset, so its secure default locks all live API surfaces."
         if env_value is None
         else f"{_LIVE_ACCOUNT_SAFETY_ENV} includes '{api}'."
     )

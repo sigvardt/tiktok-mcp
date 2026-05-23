@@ -83,6 +83,7 @@ async def test_blocked(env_value: str | None, monkeypatch: pytest.MonkeyPatch) -
 @pytest.mark.asyncio
 async def test_create_adgroup_posts_required_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
@@ -149,6 +150,7 @@ async def test_create_adgroup_posts_required_payload(monkeypatch: pytest.MonkeyP
 @pytest.mark.asyncio
 async def test_update_adgroup_posts_partial_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == ADGROUP_UPDATE_PATH
@@ -180,6 +182,7 @@ async def test_update_adgroup_posts_partial_payload(monkeypatch: pytest.MonkeyPa
 @pytest.mark.asyncio
 async def test_status_and_delete_post_adgroup_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = _json_body(request)
@@ -223,6 +226,7 @@ async def test_status_and_delete_post_adgroup_ids(monkeypatch: pytest.MonkeyPatc
 @pytest.mark.asyncio
 async def test_targeting_validation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     build_calls = _install_forbidden_business_client(monkeypatch)
 
     invalid_result = await create_adgroup(
@@ -328,8 +332,10 @@ async def test_all_adgroup_tools_advertise_destructive_hint() -> None:
 def _set_writes_env(monkeypatch: pytest.MonkeyPatch, value: str | None) -> None:
     if value is None:
         monkeypatch.delenv("TIKTOK_MCP_ALLOW_WRITES", raising=False)
+        monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
         return
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", value)
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
 
 def _targeting(location_ids: list[str]) -> JsonObject:

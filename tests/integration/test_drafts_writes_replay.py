@@ -82,6 +82,7 @@ async def test_publish_draft_replay(monkeypatch: pytest.MonkeyPatch) -> None:
 
     _install_client(monkeypatch, backend, handler)
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     result = await move_draft_to_publish(
         "draft-fixture-1",
@@ -109,6 +110,7 @@ async def test_delete_draft_replay(monkeypatch: pytest.MonkeyPatch) -> None:
 
     _install_client(monkeypatch, backend, handler)
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     result = await delete_draft("draft-fixture-1")
 

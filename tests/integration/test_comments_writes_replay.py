@@ -86,6 +86,7 @@ async def test_comments_write_replay_covers_all_six_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "comments")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     reply_requests = _install_client(monkeypatch, "reply_create.yaml")
     reply = await post_comment_reply(ALIAS, BUSINESS_ID, ACCOUNT_ID, COMMENT_ID, REPLY_TEXT)

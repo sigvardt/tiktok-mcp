@@ -38,6 +38,7 @@ CREATIVES_VCR = vcr.VCR(
 @pytest.mark.asyncio
 async def test_upload_image_asset_replay_cassette(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     requests = _install_replay_client(monkeypatch, "upload_image.yaml")
 
     result = await upload_image_asset(
@@ -59,6 +60,7 @@ async def test_upload_video_asset_replay_cassette_has_multiple_chunk_posts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     requests = _install_replay_client(monkeypatch, "upload_video_chunked.yaml")
 
     result = await upload_video_asset(

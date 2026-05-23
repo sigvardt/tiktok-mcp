@@ -24,6 +24,7 @@ ALIAS = "posting-alias"
 @pytest.mark.asyncio
 async def test_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakePostingClient()
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(drafts_tools, "_build_posting_client", lambda: fake_client)
 
     publish_result = await move_draft_to_publish(
@@ -42,6 +43,7 @@ async def test_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_allowed_publish_posts_validated_body(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakePostingClient({"status": "PROCESSING_UPLOAD"})
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(drafts_tools, "_build_posting_client", lambda: fake_client)
     monkeypatch.setattr(drafts_tools, "_single_content_posting_alias", _fake_alias)
 
@@ -78,6 +80,7 @@ async def test_allowed_publish_posts_validated_body(monkeypatch: pytest.MonkeyPa
 async def test_delete_draft_posts_publish_id(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakePostingClient({"deleted": True})
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(drafts_tools, "_build_posting_client", lambda: fake_client)
     monkeypatch.setattr(drafts_tools, "_single_content_posting_alias", _fake_alias)
 
@@ -102,6 +105,7 @@ async def test_list_drafts_not_gated() -> None:
 async def test_publish_requires_privacy_level(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakePostingClient()
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(drafts_tools, "_build_posting_client", lambda: fake_client)
     monkeypatch.setattr(drafts_tools, "_single_content_posting_alias", _forbidden_alias)
 

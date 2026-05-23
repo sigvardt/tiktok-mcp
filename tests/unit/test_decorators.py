@@ -9,12 +9,12 @@ from typing import Protocol, cast
 
 import pytest
 
-import tiktok_mcp.decorators as decorators
 from tiktok_mcp.decorators import (
     _VALID_API_NAMESPACES,
     account_changes_enabled,
     assert_tool_decoration_compliance,
     is_destructive,
+    live_account_safety_locked_for,
     parse_account_changes_env,
     parse_writes_env,
     require_account_changes_enabled,
@@ -84,8 +84,9 @@ def test_writes_env_unknown_token_logged_at_warning(
 
 
 @pytest.mark.asyncio
-async def test_decorator_blocks_when_env_unset() -> None:
+async def test_decorator_blocks_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     """Write decorator returns a structured block when env is unset."""
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     @require_writes_enabled("marketing")
     async def delete_x() -> dict[str, bool]:
@@ -102,6 +103,7 @@ async def test_decorator_blocks_when_env_unset() -> None:
 async def test_decorator_allows_when_env_all(monkeypatch: pytest.MonkeyPatch) -> None:
     """Write decorator calls through when all writes are enabled."""
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "all")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setenv("TIKTOK_MCP_LIVE_WRITES_ALLOWED", "all")
 
     @require_writes_enabled("marketing")
@@ -115,6 +117,7 @@ async def test_decorator_allows_when_env_all(monkeypatch: pytest.MonkeyPatch) ->
 async def test_decorator_per_api_granularity(monkeypatch: pytest.MonkeyPatch) -> None:
     """Write decorator allows matching APIs and blocks absent APIs."""
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing,comments")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setenv("TIKTOK_MCP_LIVE_WRITES_ALLOWED", "marketing,comments")
 
     @require_writes_enabled("marketing")
@@ -140,17 +143,22 @@ async def test_decorator_env_toggle_mid_session(monkeypatch: pytest.MonkeyPatch)
         return {"ok": True}
 
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "all")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setenv("TIKTOK_MCP_LIVE_WRITES_ALLOWED", "all")
     assert await delete_x() == {"ok": True}
 
     monkeypatch.delenv("TIKTOK_MCP_ALLOW_WRITES", raising=False)
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     blocked_result = await delete_x()
     assert blocked_result["error"] == "writes_disabled"
 
 
 @pytest.mark.asyncio
-async def test_structured_error_has_all_required_fields() -> None:
+async def test_structured_error_has_all_required_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Blocked write responses contain exactly the required envelope keys."""
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     @require_writes_enabled("marketing")
     async def delete_x() -> dict[str, bool]:
@@ -298,8 +306,11 @@ def test_assert_tool_decoration_compliance_accepts_marked_functions(
 
 
 @pytest.mark.asyncio
-async def test_structured_error_uses_summary_attribute() -> None:
+async def test_structured_error_uses_summary_attribute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Blocked write responses prefer the tool summary marker when present."""
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     async def delete_x() -> dict[str, bool]:
         return {"ok": True}
@@ -310,6 +321,64 @@ async def test_structured_error_uses_summary_attribute() -> None:
     result = await decorated_delete_x()
 
     assert result["would_have_done"] == "would delete x"
+
+
+@pytest.mark.parametrize(
+    "api",
+    (
+        pytest.param("display", id="display"),
+        pytest.param("marketing", id="marketing"),
+        pytest.param("posting", id="posting"),
+        pytest.param("comments", id="comments"),
+    ),
+)
+def test_live_account_safety_env_unset_locks_all_surfaces(
+    monkeypatch: pytest.MonkeyPatch,
+    api: str,
+) -> None:
+    """Unset live-account safety locks every destructive live API surface."""
+    monkeypatch.delenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", raising=False)
+
+    assert live_account_safety_locked_for(api) is True
+
+
+@pytest.mark.parametrize(
+    "api",
+    (
+        pytest.param("display", id="display"),
+        pytest.param("marketing", id="marketing"),
+        pytest.param("posting", id="posting"),
+        pytest.param("comments", id="comments"),
+    ),
+)
+def test_live_account_safety_empty_env_unlocks_all_surfaces(
+    monkeypatch: pytest.MonkeyPatch,
+    api: str,
+) -> None:
+    """An explicit empty live-account safety env unlocks every live API surface."""
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
+
+    assert live_account_safety_locked_for(api) is False
+
+
+@pytest.mark.parametrize(
+    ("api", "expected_locked"),
+    (
+        pytest.param("display", False, id="display-unlocked"),
+        pytest.param("marketing", True, id="marketing-locked"),
+        pytest.param("posting", False, id="posting-unlocked"),
+        pytest.param("comments", True, id="comments-locked"),
+    ),
+)
+def test_live_account_safety_csv_subset_locks_only_listed_surfaces(
+    monkeypatch: pytest.MonkeyPatch,
+    api: str,
+    expected_locked: bool,
+) -> None:
+    """A CSV live-account safety value locks only the listed live API surfaces."""
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "marketing,comments")
+
+    assert live_account_safety_locked_for(api) is expected_locked
 
 
 @pytest.mark.asyncio

@@ -45,6 +45,7 @@ ADGROUPS_VCR = vcr.VCR(
 @pytest.mark.asyncio
 async def test_adgroup_crud_happy_path_with_cassettes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     requests = _install_business_client(monkeypatch, _cassette_handler)
 
     created = await create_adgroup(

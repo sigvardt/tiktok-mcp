@@ -48,6 +48,7 @@ AUDIENCE_VCR = vcr.VCR(
 @pytest.mark.asyncio
 async def test_create_custom_audience_upload_replay(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.content.lower()
@@ -77,6 +78,7 @@ async def test_create_custom_audience_upload_replay(monkeypatch: pytest.MonkeyPa
 @pytest.mark.asyncio
 async def test_update_and_delete_custom_audience_replay(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content.decode("utf-8"))

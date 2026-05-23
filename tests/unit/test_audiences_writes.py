@@ -45,6 +45,7 @@ EXPECTED_EMAIL_HASH = hashlib.sha256(PLAINTEXT_EMAIL.encode("utf-8")).hexdigest(
 @pytest.mark.asyncio
 async def test_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
     build_calls = _install_forbidden_business_client(monkeypatch)
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     results = [
         await create_custom_audience(
@@ -67,6 +68,7 @@ async def test_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_path_traversal_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     build_calls = _install_forbidden_business_client(monkeypatch)
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     result = await create_custom_audience(
         ALIAS,
@@ -98,6 +100,7 @@ async def test_no_pii_in_logs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.content.lower()
@@ -137,6 +140,7 @@ async def test_update_and_delete_custom_audience_post_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content.decode("utf-8"))

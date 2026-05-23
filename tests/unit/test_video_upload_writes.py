@@ -54,7 +54,9 @@ def reset_upload_sessions() -> Iterator[None]:
 
 
 @pytest.mark.asyncio
-async def test_blocked() -> None:
+async def test_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
+
     response = cast(
         dict[str, object],
         await init_video_upload(ALIAS, MIN_CHUNK_BYTES, MIN_CHUNK_BYTES, 1),
@@ -83,6 +85,7 @@ def test_chunk_math() -> None:
 @pytest.mark.asyncio
 async def test_idempotent_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     fake_client = FakePostingClient()
     monkeypatch.setattr(upload_tools, "_build_posting_client", lambda: fake_client)
     chunk = b"x" * MIN_CHUNK_BYTES
@@ -149,6 +152,7 @@ async def test_token_refresh_mid_upload() -> None:
 @pytest.mark.asyncio
 async def test_drafts_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     fake_client = FakePostingClient()
     monkeypatch.setattr(upload_tools, "_build_posting_client", lambda: fake_client)
 

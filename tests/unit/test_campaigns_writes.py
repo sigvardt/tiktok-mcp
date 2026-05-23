@@ -44,8 +44,10 @@ async def test_create_campaign_blocked_when_writes_disabled(
     build_calls = _install_forbidden_business_client(monkeypatch)
     if env_value is None:
         monkeypatch.delenv("TIKTOK_MCP_ALLOW_WRITES", raising=False)
+        monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     else:
         monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", env_value)
+        monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     result = await create_campaign(
         ALIAS,
@@ -68,6 +70,7 @@ async def test_create_campaign_blocked_when_writes_disabled(
 async def test_create_campaign_routes_marketing_only(monkeypatch: pytest.MonkeyPatch) -> None:
     build_calls = _install_forbidden_business_client(monkeypatch)
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "comments")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     result = await create_campaign(
         ALIAS,
@@ -103,6 +106,7 @@ async def test_create_campaign_posts_with_access_token_and_logs_metadata(
         ),
     )
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     with caplog.at_level(logging.INFO, logger="tiktok_mcp.tools.marketing_writes_campaigns"):
         result = await create_campaign(
@@ -145,6 +149,7 @@ async def test_invalid_create_campaign_returns_validation_error_before_http(
 ) -> None:
     build_calls = _install_forbidden_business_client(monkeypatch)
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     result = await create_campaign(
         ALIAS,
@@ -175,6 +180,7 @@ async def test_delete_campaign_uses_status_update_endpoint(
         ),
     )
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     result = await delete_campaign(ALIAS, ADVERTISER_ID, [CAMPAIGN_ID])
 

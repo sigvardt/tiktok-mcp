@@ -37,6 +37,7 @@ async def test_campaign_crud_replays_marketing_campaign_cassettes(
 ) -> None:
     _install_vcr_client(monkeypatch)
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     with CAMPAIGNS_VCR.use_cassette("marketing_campaigns/create_traffic.yaml", record_mode="none"):
         created = await create_campaign(

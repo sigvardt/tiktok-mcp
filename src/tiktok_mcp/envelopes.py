@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 # pyright: reportMissingTypeStubs=false, reportExplicitAny=false, reportAny=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
-
 from typing import Any, ClassVar, Generic, TypeVar
 
 import httpx

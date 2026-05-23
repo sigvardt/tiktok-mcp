@@ -118,6 +118,7 @@ def reset_upload_sessions() -> Iterator[None]:
 @pytest.mark.asyncio
 async def test_file_upload_happy_path_replays_cassette(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     backend = MemoryBackend()
     await _store_account(backend)
     replay = CassetteReplay("single_chunk_draft.yaml")
@@ -163,6 +164,7 @@ async def test_file_upload_happy_path_replays_cassette(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_token_refresh_mid_upload(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     backend = MemoryBackend()
     await _store_account(backend)
     await _store_app_credentials(backend)

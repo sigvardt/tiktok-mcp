@@ -63,6 +63,7 @@ async def test_pull_from_url_draft_and_status_replay(monkeypatch: pytest.MonkeyP
     await _store_account(backend)
     replay = _patch_posting_client(monkeypatch, backend, "from_url_draft.yaml")
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     init_result = await upload_video_from_url(ALIAS, "https://example.com/sample.mp4")
     status_result = await posting_tools.get_publish_status(cast(str, init_result["publish_id"]))
@@ -89,6 +90,7 @@ async def test_photo_carousel_replay(monkeypatch: pytest.MonkeyPatch) -> None:
     await _store_account(backend)
     replay = _patch_posting_client(monkeypatch, backend, "photo_carousel.yaml")
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     result = await upload_photo_from_urls(
         ALIAS,
@@ -115,6 +117,7 @@ async def test_cancel_pending_replay(monkeypatch: pytest.MonkeyPatch) -> None:
     await _store_account(backend)
     replay = _patch_posting_client(monkeypatch, backend, "cancel_pending.yaml")
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     await posting_tools._remember_publish_alias("v_inbox_url~v2.cancel", ALIAS)
 
     result = await cancel_publish("v_inbox_url~v2.cancel")

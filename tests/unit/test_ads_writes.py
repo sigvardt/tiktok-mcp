@@ -45,6 +45,7 @@ async def test_blocked_create_ad_returns_writes_disabled_without_http(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     build_calls = _install_forbidden_business_client(monkeypatch)
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     result = await create_ad(
         ALIAS,
@@ -68,6 +69,7 @@ async def test_blocked_create_ad_returns_writes_disabled_without_http(
 @pytest.mark.asyncio
 async def test_spark_ads_requires_post_id(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     build_calls = _install_forbidden_business_client(monkeypatch)
 
     result = await create_ad(
@@ -92,6 +94,7 @@ async def test_spark_ads_requires_post_id(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.asyncio
 async def test_ad_crud_posts_expected_payloads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == AD_STATUS_UPDATE_PATH:

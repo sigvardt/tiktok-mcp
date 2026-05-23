@@ -35,6 +35,7 @@ REPLY_TEXT = "Sensitive customer reply body"
 @pytest.mark.asyncio
 async def test_blocked_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TIKTOK_MCP_ALLOW_WRITES", raising=False)
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     build_calls: list[str] = []
 
     def forbidden_build(alias: str) -> FakeCommentWriteClient:
@@ -54,6 +55,7 @@ async def test_blocked_writes(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.asyncio
 async def test_blocked_when_only_marketing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     build_calls: list[str] = []
 
     def forbidden_build(alias: str) -> FakeCommentWriteClient:
@@ -72,6 +74,7 @@ async def test_blocked_when_only_marketing(monkeypatch: pytest.MonkeyPatch) -> N
 @pytest.mark.asyncio
 async def test_allowed_with_comments_or_all(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "comments")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     comments_client = _install_client(monkeypatch, request_id="req-hide")
 
     hidden = await hide_comment(ALIAS, BUSINESS_ID, ACCOUNT_ID, COMMENT_ID)
@@ -91,6 +94,7 @@ async def test_allowed_with_comments_or_all(monkeypatch: pytest.MonkeyPatch) -> 
     ]
 
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "all")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     all_client = _install_client(monkeypatch, request_id="req-unhide")
 
     unhidden = await unhide_comment(ALIAS, BUSINESS_ID, ACCOUNT_ID, COMMENT_ID)
@@ -107,6 +111,7 @@ async def test_reply_text_not_in_log(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "comments")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.delenv("TIKTOK_MCP_LOG_COMMENT_BODIES", raising=False)
     _ = _install_client(monkeypatch, payload={"request_id": "req-reply", "reply_id": "reply-001"})
 
@@ -149,6 +154,7 @@ async def test_reply_text_not_in_log(
 @pytest.mark.asyncio
 async def test_reply_max_length(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "comments")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     build_calls: list[str] = []
 
     def forbidden_build(alias: str) -> FakeCommentWriteClient:
@@ -185,6 +191,7 @@ async def test_reply_text_normalizes_nfc_and_rejects_surrogates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "comments")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     client = _install_client(
         monkeypatch,
         payload={"request_id": "req-reply", "reply_id": "reply-001"},
@@ -204,6 +211,7 @@ async def test_pin_unpin_hide_unhide_delete_request_shapes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "comments")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     client = _install_client(monkeypatch, request_id="req-action")
 
     pinned = await pin_comment(ALIAS, BUSINESS_ID, ACCOUNT_ID, COMMENT_ID)

@@ -64,7 +64,11 @@ class CreativeWriteTool(Protocol):
 
 
 @pytest.mark.asyncio
-async def test_blocked_tools_return_structured_writes_disabled() -> None:
+async def test_blocked_tools_return_structured_writes_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
+
     blocked_calls = [
         await upload_image_asset(ALIAS, ADVERTISER_ID, "missing.jpg"),
         await upload_video_asset(ALIAS, ADVERTISER_ID, "missing.mp4"),
@@ -91,7 +95,7 @@ def test_creative_signatures_are_raw_file_sha256() -> None:
 
 
 def test_all_creative_tools_are_destructive_and_write_gated() -> None:
-    registered_tools = cast(FastMCPWithToolManager, app)._tool_manager._tools
+    registered_tools = cast(FastMCPWithToolManager, cast(object, app))._tool_manager._tools
 
     for tool_name in CREATIVE_TOOL_NAMES:
         tool = registered_tools[tool_name]
@@ -106,6 +110,7 @@ async def test_upload_image_posts_single_multipart_with_signature(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     signature = sha256_file(SAMPLE_IMAGE)
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -142,6 +147,7 @@ async def test_upload_video_dedup_response_returns_existing_id_without_reupload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     signature = sha256_file(SAMPLE_VIDEO)
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -178,6 +184,7 @@ async def test_delete_video_and_image_assets_post_id_lists(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = cast(dict[str, object], json.loads(request.content.decode("utf-8")))

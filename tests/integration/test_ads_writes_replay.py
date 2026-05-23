@@ -46,6 +46,7 @@ ADS_VCR = vcr.VCR(
 @pytest.mark.asyncio
 async def test_ad_crud_write_replay_cassettes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
 
     def handler(request: httpx.Request) -> httpx.Response:
         return _cassette_response(_cassette_name(request), request)

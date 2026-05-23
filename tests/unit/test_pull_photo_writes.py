@@ -37,6 +37,7 @@ def clear_publish_aliases() -> None:
 @pytest.mark.asyncio
 async def test_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakePostingClient()
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
     result = await upload_video_from_url(ALIAS, VIDEO_URL)
@@ -50,6 +51,7 @@ async def test_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_direct_post_requires_post_info(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakePostingClient()
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
     result = await upload_video_from_url(
@@ -72,6 +74,7 @@ async def test_direct_post_requires_post_info(monkeypatch: pytest.MonkeyPatch) -
 async def test_https_only(monkeypatch: pytest.MonkeyPatch, bad_url: str) -> None:
     fake_client = FakePostingClient()
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
     video_result = await upload_video_from_url(ALIAS, bad_url)
@@ -86,6 +89,7 @@ async def test_https_only(monkeypatch: pytest.MonkeyPatch, bad_url: str) -> None
 async def test_privacy_level_validation(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakePostingClient()
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
     result = await upload_video_from_url(
@@ -106,6 +110,7 @@ async def test_draft_video_routes_to_inbox_without_post_info(
 ) -> None:
     fake_client = FakePostingClient(publish_id="publish-draft")
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
     result = await upload_video_from_url(
@@ -128,6 +133,7 @@ async def test_direct_video_routes_to_direct_post_with_post_info(
 ) -> None:
     fake_client = FakePostingClient(publish_id="publish-direct")
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
     result = await upload_video_from_url(
@@ -149,6 +155,7 @@ async def test_direct_video_routes_to_direct_post_with_post_info(
 async def test_photo_urls_build_nested_image_url_array(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakePostingClient(publish_id="photo-publish")
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
 
     result = await upload_photo_from_urls(ALIAS, PHOTO_URLS)
@@ -167,6 +174,7 @@ async def test_photo_urls_build_nested_image_url_array(monkeypatch: pytest.Monke
 async def test_get_publish_status_uses_cached_alias_once(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakePostingClient(status="FETCH_IN_PROGRESS")
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
     _ = await upload_video_from_url(ALIAS, VIDEO_URL)
 
@@ -185,6 +193,7 @@ async def test_cancel_publish_skips_cancel_when_already_terminal(
 ) -> None:
     fake_client = FakePostingClient(status="PUBLISH_COMPLETE")
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
     await posting_tools._remember_publish_alias("publish-terminal", ALIAS)
 
