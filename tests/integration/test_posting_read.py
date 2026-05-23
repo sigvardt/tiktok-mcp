@@ -112,6 +112,28 @@ async def test_creator_info_is_not_cached() -> None:
 
 
 @pytest.mark.asyncio
+async def test_creator_info_accepts_live_sandbox_shape_without_interaction_flags() -> None:
+    backend = MemoryBackend()
+    await _store_account(backend)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _display_response(request, _live_sandbox_creator_info_payload())
+
+    async with _client(backend, handler) as client:
+        creator_info = await client.get_creator_info(ALIAS)
+
+    assert creator_info.creator_nickname == "POW..."
+    assert creator_info.creator_avatar_url.endswith("shcp=bbadf38d&idc=no1a")
+    assert creator_info.creator_username is None
+    assert creator_info.privacy_level_options is None
+    assert creator_info.max_video_post_duration_sec is None
+    assert creator_info.comment_disabled is None
+    assert creator_info.duet_disabled is None
+    assert creator_info.stitch_disabled is None
+    assert "comment_disabled_supported" not in creator_info.model_dump()
+
+
+@pytest.mark.asyncio
 async def test_expired_token_refreshes_under_content_posting_app_credentials() -> None:
     backend = MemoryBackend()
     await _store_account(backend, access_expires_at=datetime.now(UTC) - timedelta(minutes=1))
@@ -318,8 +340,20 @@ def _creator_info_payload(max_duration: int) -> dict[str, object]:
     return {
         "privacy_level_options": ["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS"],
         "max_video_post_duration_sec": max_duration,
-        "comment_disabled_supported": True,
+        "comment_disabled": False,
+        "duet_disabled": False,
+        "stitch_disabled": False,
         "creator_avatar_url": "https://example.test/avatar.png",
         "creator_username": "demo_creator",
         "creator_nickname": "Demo Creator",
+    }
+
+
+def _live_sandbox_creator_info_payload() -> dict[str, object]:
+    return {
+        "creator_nickname": "POW...",
+        "creator_avatar_url": (
+            "https://p16-sign-va.tiktokcdn.com/tos-maliva-avt-0068/"
+            "creator.jpeg?shcp=bbadf38d&idc=no1a"
+        ),
     }
