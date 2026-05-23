@@ -24,6 +24,7 @@ from tiktok_mcp.auth.keychain import (
 from tiktok_mcp.observability.rate_limit_tracker import reset_tracker
 from tiktok_mcp.tools import display_read as display_read_tools
 from tiktok_mcp.tools.display_read import (
+    DEFAULT_USER_FIELDS,
     DEFAULT_VIDEO_FIELDS,
     OAUTH_REVOKE_PATH,
     USER_INFO_PATH,
@@ -90,7 +91,7 @@ async def test_display_get_user_info_uses_scope_gated_default_fields(
                     "open_id": "open-basic",
                     "display_name": "Basic Creator",
                     "avatar_url": "https://example.test/avatar.png",
-                    "union_id": "should-not-leak",
+                    "union_id": "union-basic",
                 },
             },
         )
@@ -99,12 +100,14 @@ async def test_display_get_user_info_uses_scope_gated_default_fields(
 
     result = await display_get_user_info(ALIAS)
 
+    assert requests[0].method == "GET"
     assert requests[0].url.path == USER_INFO_PATH
+    assert requests[0].url.params["fields"] == ",".join(DEFAULT_USER_FIELDS[:6])
     assert requests[0].headers["authorization"] == "Bearer display-access"
-    assert _json_body(requests[0])["fields"] == ["open_id", "avatar_url", "display_name"]
+    assert requests[0].content == b""
     assert result["open_id"] == "open-basic"
     assert result["display_name"] == "Basic Creator"
-    assert result["union_id"] is None
+    assert result["union_id"] == "union-basic"
 
 
 @pytest.mark.asyncio
@@ -131,11 +134,12 @@ async def test_display_list_videos_preserves_pagination_passthrough(
 
     result = await display_list_videos(ALIAS, cursor=123, max_count=7)
 
+    assert requests[0].method == "POST"
     assert requests[0].url.path == VIDEO_LIST_PATH
+    assert requests[0].url.params["fields"] == ",".join(DEFAULT_VIDEO_FIELDS)
     assert _json_body(requests[0]) == {
         "cursor": 123,
         "max_count": 7,
-        "fields": list(DEFAULT_VIDEO_FIELDS),
     }
     assert result["cursor"] == 456
     assert result["has_more"] is True
@@ -162,10 +166,11 @@ async def test_display_query_videos_posts_filters_and_validates_limit(
 
     result = await display_query_videos(ALIAS, ["video-a", "video-b"], fields=["id"])
 
+    assert requests[0].method == "POST"
     assert requests[0].url.path == VIDEO_QUERY_PATH
+    assert requests[0].url.params["fields"] == "id"
     assert _json_body(requests[0]) == {
         "filters": {"video_ids": ["video-a", "video-b"]},
-        "fields": ["id"],
     }
     assert [video["id"] for video in result] == ["video-a", "video-b"]
     with pytest.raises(ValueError, match="at most 20"):
@@ -192,10 +197,11 @@ async def test_display_get_video_metrics_uses_metrics_field_set(
 
     result = await display_get_video_metrics(ALIAS, "metric-video")
 
+    assert requests[0].method == "POST"
     assert requests[0].url.path == VIDEO_QUERY_PATH
+    assert requests[0].url.params["fields"] == ",".join(VIDEO_METRICS_FIELDS)
     assert _json_body(requests[0]) == {
         "filters": {"video_ids": ["metric-video"]},
-        "fields": list(VIDEO_METRICS_FIELDS),
     }
     assert result["id"] == "metric-video"
     assert result["view_count"] == 999
@@ -240,6 +246,7 @@ async def test_display_refresh_token_is_gated_and_forces_refresh(
     stored_account, stored_tokens = _stored_account_and_tokens(backend, ALIAS)
     assert stored_account.status is AccountStatus.OK
     assert stored_tokens.access_token.get_secret_value() == "new-display-access"
+    assert stored_tokens.refresh_token is not None
     assert stored_tokens.refresh_token.get_secret_value() == "new-display-refresh"
 
 
@@ -303,6 +310,33 @@ async def test_multi_account_isolation_uses_distinct_bearer_tokens(
     assert second["open_id"] == "token-b"
 
 
+@pytest.mark.asyncio
+async def test_display_read_tools_accept_explicit_sandbox_namespace(
+    backend: MemoryBackend,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _store_app_credentials(backend)
+    await _store_app_credentials(backend, sandbox=True)
+    await _store_display_account(backend, ALIAS, access_token="prod-token")
+    await _store_display_account(backend, ALIAS, sandbox=True, access_token="sandbox-token")
+    authorizations: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        authorization = request.headers["authorization"]
+        authorizations.append(authorization)
+        return _display_response(
+            request,
+            {"user": {"open_id": authorization.removeprefix("Bearer ")}},
+        )
+
+    _patch_http_client(monkeypatch, handler)
+
+    result = await display_get_user_info(ALIAS, fields=["open_id"], sandbox=True)
+
+    assert authorizations == ["Bearer sandbox-token"]
+    assert result["open_id"] == "sandbox-token"
+
+
 def test_display_tool_markers_are_registered() -> None:
     assert getattr(display_get_user_info, "__tiktok_mcp_read_only__", False) is True
     assert getattr(display_list_videos, "__tiktok_mcp_read_only__", False) is True
@@ -328,13 +362,13 @@ def _patch_http_client(
     monkeypatch.setattr(DisplayAPIClient, "_build_http_client", build_http_client)
 
 
-async def _store_app_credentials(backend: MemoryBackend) -> None:
+async def _store_app_credentials(backend: MemoryBackend, *, sandbox: bool = False) -> None:
     await backend.set(
-        app_creds_key(ApiType.DISPLAY, False),
+        app_creds_key(ApiType.DISPLAY, sandbox),
         json.dumps(
             {
                 "api_type": ApiType.DISPLAY.value,
-                "sandbox": False,
+                "sandbox": sandbox,
                 "client_id": "display-client-id",
                 "client_secret": "display-client-secret",
                 "created_at": NOW.isoformat(),
@@ -350,11 +384,12 @@ async def _store_display_account(
     access_token: str = "display-access",
     refresh_token: str = "display-refresh",
     scopes: Sequence[str] | None = None,
+    sandbox: bool = False,
 ) -> None:
     account = Account(
         alias=alias,
         api_type=ApiType.DISPLAY,
-        sandbox=False,
+        sandbox=sandbox,
         tiktok_id=f"{alias}-open-id",
         display_name="Display Creator",
         avatar_url=None,
@@ -373,7 +408,7 @@ async def _store_display_account(
         last_rotated_at=datetime.now(UTC),
     )
     await backend.set(
-        account_key(ApiType.DISPLAY, False, alias),
+        account_key(ApiType.DISPLAY, sandbox, alias),
         serialize_account_record(account, tokens),
     )
 

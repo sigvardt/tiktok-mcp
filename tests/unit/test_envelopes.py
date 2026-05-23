@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# pyright: reportMissingTypeStubs=false
+
 import json
 
 import httpx
@@ -107,6 +109,19 @@ def test_business_with_typed_data_model() -> None:
 def test_display_success_returns_data() -> None:
     """Display responses without an error payload return the inner data object."""
     response = _json_response({"data": {"open_id": "x"}}, url=DISPLAY_URL)
+
+    assert decode_display_response(response) == {"open_id": "x"}
+
+
+def test_display_success_ignores_ok_error_envelope() -> None:
+    """Display responses with TikTok's ok error envelope return data."""
+    response = _json_response(
+        {
+            "data": {"open_id": "x"},
+            "error": {"code": "ok", "message": "", "log_id": "log-ok"},
+        },
+        url=DISPLAY_URL,
+    )
 
     assert decode_display_response(response) == {"open_id": "x"}
 

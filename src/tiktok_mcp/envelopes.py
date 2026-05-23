@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+# pyright: reportMissingTypeStubs=false, reportExplicitAny=false, reportAny=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
+
 from typing import Any, ClassVar, Generic, TypeVar
 
 import httpx
@@ -140,7 +142,11 @@ def decode_display_response(
             context={"endpoint": endpoint},
         ) from None
 
-    if display_response.error is not None and display_response.error.code:
+    if (
+        display_response.error is not None
+        and display_response.error.code
+        and display_response.error.code != "ok"
+    ):
         context: ErrorContext = {
             "endpoint": endpoint,
             "log_id": display_response.error.log_id,

@@ -36,8 +36,10 @@ MAX_QUERY_VIDEO_IDS = 20
 DEFAULT_USER_FIELDS: tuple[str, ...] = (
     "open_id",
     "union_id",
-    "avatar_url",
     "display_name",
+    "avatar_url",
+    "avatar_url_100",
+    "avatar_large_url",
     "bio_description",
     "follower_count",
     "following_count",
@@ -45,6 +47,7 @@ DEFAULT_USER_FIELDS: tuple[str, ...] = (
     "video_count",
     "is_verified",
     "profile_deep_link",
+    "username",
 )
 DEFAULT_VIDEO_FIELDS: tuple[str, ...] = (
     "id",
@@ -73,10 +76,10 @@ VIDEO_METRICS_FIELDS: tuple[str, ...] = (
     "embed_link",
 )
 USER_FIELD_SCOPES: Mapping[str, str] = {
-    "union_id": "user.info.profile",
     "bio_description": "user.info.profile",
     "is_verified": "user.info.profile",
     "profile_deep_link": "user.info.profile",
+    "username": "user.info.profile",
     "follower_count": "user.info.stats",
     "following_count": "user.info.stats",
     "likes_count": "user.info.stats",
@@ -89,16 +92,17 @@ USER_FIELD_SCOPES: Mapping[str, str] = {
 async def display_get_user_info(
     alias: str,
     fields: list[str] | None = None,
+    sandbox: bool | None = None,
 ) -> dict[str, object]:
     """Get Display API user profile fields for an authorized account."""
-    account, client = await _build_display_client(alias)
+    account, client = await _build_display_client(alias, sandbox=sandbox)
     request_fields = _allowed_user_fields(account, fields)
     try:
         data = await _request_json_object(
             client,
-            "POST",
+            "GET",
             USER_INFO_PATH,
-            json_body={"fields": request_fields},
+            params=_fields_params(request_fields),
         )
     finally:
         await client.aclose()
@@ -115,18 +119,23 @@ async def display_list_videos(
     cursor: int | None = None,
     max_count: int = 20,
     fields: list[str] | None = None,
+    sandbox: bool | None = None,
 ) -> dict[str, object]:
     """List Display API videos with TikTok's native cursor pagination."""
-    _account, client = await _build_display_client(alias)
-    body: dict[str, object] = {
-        "max_count": max_count,
-        "fields": _field_list(fields, DEFAULT_VIDEO_FIELDS),
-    }
+    _account, client = await _build_display_client(alias, sandbox=sandbox)
+    request_fields = _field_list(fields, DEFAULT_VIDEO_FIELDS)
+    body: dict[str, object] = {"max_count": max_count}
     if cursor is not None:
         body["cursor"] = cursor
 
     try:
-        data = await _request_json_object(client, "POST", VIDEO_LIST_PATH, json_body=body)
+        data = await _request_json_object(
+            client,
+            "POST",
+            VIDEO_LIST_PATH,
+            params=_fields_params(request_fields),
+            json_body=body,
+        )
     finally:
         await client.aclose()
 
@@ -144,16 +153,21 @@ async def display_query_videos(
     alias: str,
     video_ids: list[str],
     fields: list[str] | None = None,
+    sandbox: bool | None = None,
 ) -> list[dict[str, object]]:
     """Query up to 20 Display API videos by video ID."""
-    return await _query_videos(alias, video_ids, fields)
+    return await _query_videos(alias, video_ids, fields, sandbox=sandbox)
 
 
 @app.tool(annotations=ToolAnnotations(readOnlyHint=True))
 @mark_read_only
-async def display_get_video_metrics(alias: str, video_id: str) -> dict[str, object]:
+async def display_get_video_metrics(
+    alias: str,
+    video_id: str,
+    sandbox: bool | None = None,
+) -> dict[str, object]:
     """Get Display API metrics for one video."""
-    videos = await _query_videos(alias, [video_id], list(VIDEO_METRICS_FIELDS))
+    videos = await _query_videos(alias, [video_id], list(VIDEO_METRICS_FIELDS), sandbox=sandbox)
     if not videos:
         raise ValueError(f"Display API returned no video for video_id={video_id!r}")
     metrics = VideoMetrics.model_validate(videos[0])
@@ -164,17 +178,23 @@ async def _query_videos(
     alias: str,
     video_ids: list[str],
     fields: list[str] | None = None,
+    *,
+    sandbox: bool | None = None,
 ) -> list[dict[str, object]]:
     if len(video_ids) > MAX_QUERY_VIDEO_IDS:
         raise ValueError("display_query_videos accepts at most 20 video_ids per call")
 
-    _account, client = await _build_display_client(alias)
-    body = {
-        "filters": {"video_ids": video_ids},
-        "fields": _field_list(fields, DEFAULT_VIDEO_FIELDS),
-    }
+    _account, client = await _build_display_client(alias, sandbox=sandbox)
+    request_fields = _field_list(fields, DEFAULT_VIDEO_FIELDS)
+    body = {"filters": {"video_ids": video_ids}}
     try:
-        data = await _request_json_object(client, "POST", VIDEO_QUERY_PATH, json_body=body)
+        data = await _request_json_object(
+            client,
+            "POST",
+            VIDEO_QUERY_PATH,
+            params=_fields_params(request_fields),
+            json_body=body,
+        )
     finally:
         await client.aclose()
 
@@ -226,13 +246,17 @@ async def display_revoke_token(alias: str) -> dict[str, object]:
     return {"alias": alias, "revoked": True, "status": AccountStatus.REVOKED.value}
 
 
-async def _build_display_client(alias: str) -> tuple[Account, DisplayAPIClient]:
-    account = await _load_display_account(alias)
+async def _build_display_client(
+    alias: str,
+    *,
+    sandbox: bool | None = None,
+) -> tuple[Account, DisplayAPIClient]:
+    account = await _load_display_account(alias, sandbox=sandbox)
     credentials = await _load_display_app_credentials(account.sandbox)
     return account, DisplayAPIClient(account, credentials)
 
 
-async def _load_display_account(alias: str) -> Account:
+async def _load_display_account(alias: str, *, sandbox: bool | None = None) -> Account:
     backend = await get_backend()
     for key in await backend.list_keys("tiktok-mcp::display::"):
         if not key.endswith(f"::account::{alias}"):
@@ -241,7 +265,7 @@ async def _load_display_account(alias: str) -> Account:
         if raw_record is None:
             continue
         account, _tokens = deserialize_account_record(raw_record)
-        if account.api_type is ApiType.DISPLAY:
+        if account.api_type is ApiType.DISPLAY and (sandbox is None or account.sandbox is sandbox):
             return account
     raise AccountNotFoundError(alias, api_type=ApiType.DISPLAY.value)
 
@@ -271,9 +295,15 @@ async def _request_json_object(
     method: str,
     path: str,
     *,
-    json_body: Mapping[str, object],
+    params: Mapping[str, str | int | float | bool | None] | None = None,
+    json_body: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
-    data = await client.request(method, path, json=dict(json_body))
+    data = await client.request(
+        method,
+        path,
+        params=params,
+        json=dict(json_body) if json_body is not None else None,
+    )
     if not isinstance(data, dict):
         raise ValueError(f"Display API response data for {path} must be a JSON object")
     return {str(key): value for key, value in data.items()}
@@ -318,6 +348,10 @@ def _field_list(fields: Sequence[str] | None, defaults: Sequence[str]) -> list[s
     if fields is None:
         return list(defaults)
     return list(fields)
+
+
+def _fields_params(fields: Sequence[str]) -> dict[str, str]:
+    return {"fields": ",".join(fields)}
 
 
 def _nested_object(payload: Mapping[str, object], key: str) -> dict[str, object]:

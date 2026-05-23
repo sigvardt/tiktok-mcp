@@ -11,6 +11,8 @@ class UserInfo(BaseModel):
     open_id: str | None = None
     union_id: str | None = None
     avatar_url: str | None = None
+    avatar_url_100: str | None = None
+    avatar_large_url: str | None = None
     display_name: str | None = None
     bio_description: str | None = None
     follower_count: int | None = None
@@ -19,6 +21,7 @@ class UserInfo(BaseModel):
     video_count: int | None = None
     is_verified: bool | None = None
     profile_deep_link: str | None = None
+    username: str | None = None
 
 
 class Video(BaseModel):
