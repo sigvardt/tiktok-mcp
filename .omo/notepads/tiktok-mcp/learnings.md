@@ -204,3 +204,10 @@ mangled in transit. The session context provides the canonical value.
 - Exact registered tool count pinned in `tests/integration/test_stdio_boot.py` is `EXPECTED_TOOL_COUNT_MIN = 69`. The same subprocess surface listed exactly 2 resources (`tiktok-mcp://accounts/`, `tiktok-mcp://app-credentials/`) and exactly 3 prompts (`weekly_marketing_report`, `comment_queue_triage`, `weekly_engagement_summary`).
 - FastMCP initialize handshake requires `protocolVersion`, `capabilities`, and `clientInfo` in `params`; a bare `params: {}` initialize frame is rejected as invalid request parameters. `notifications/initialized` produces no response, so the boot test sends it and then reads only the next request id.
 - The literal `echo "Content-Length: ..."` smoke is not a supported successful framing path for this FastMCP version: it is parsed as newline JSON input, emits parseable JSON error notification/error frames, and does not crash. Use newline-delimited JSON for expected-success stdio tests.
+
+## [2026-05-23T08:57Z] Display read request-shape fix
+
+- TikTok Display read endpoints require requested fields in the URL query string as a comma-separated `fields` parameter, not as a JSON array inside the request body. `video/list` and `video/query` keep POST JSON bodies for pagination/filter data only.
+- Live sandbox verification showed `/v2/user/info/` returns HTTP 404 when called as POST even with `?fields=...`; the working shape is GET with the same `fields` query parameter. `/v2/video/list/` works as POST once `fields` is moved to the query string.
+- Display API success responses can include `error: {"code": "ok", ...}`; the Display envelope decoder must treat `ok` as success instead of raising `DisplayApiError`.
+- Display read tools now accept an explicit `sandbox` selector so duplicate aliases across production and sandbox resolve to the intended keychain namespace.
