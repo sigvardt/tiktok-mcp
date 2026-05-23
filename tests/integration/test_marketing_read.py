@@ -18,6 +18,7 @@ from tiktok_mcp.api.marketing import (
     BusinessCenter,
     Campaign,
 )
+from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError
 from tiktok_mcp.auth.keychain import account_key, app_creds_key, serialize_account_record
 from tiktok_mcp.observability.rate_limit_tracker import reset_tracker
 from tiktok_mcp.tools import marketing_read as marketing_read_tools
@@ -45,6 +46,10 @@ from tiktok_mcp.types.errors import BusinessApiError
 
 NOW = datetime(2026, 5, 22, 12, 0, tzinfo=UTC)
 ALIAS = "marketing-demo"
+BC_ENDPOINTS_NOT_AVAILABLE_IN_SANDBOX_MESSAGE = (
+    "Business Center endpoints are not available in the TikTok Business sandbox. "
+    "Use a production account with TIKTOK_MCP_LIVE_ACCOUNT_SAFETY configured to enable."
+)
 
 
 class MemoryBackend:
@@ -158,6 +163,122 @@ async def test_list_bc_advertisers_passes_asset_type(monkeypatch: pytest.MonkeyP
     advertisers = await marketing_list_bc_advertisers(ALIAS, "bc-1")
 
     assert advertisers == [Advertiser(advertiser_id="adv-2")]
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "endpoint", "alternative_tools"),
+    [
+        pytest.param(
+            "marketing_list_business_centers",
+            BC_GET_PATH,
+            ["marketing_list_advertisers", "marketing_list_bc_advertisers"],
+            id="business-centers",
+        ),
+        pytest.param(
+            "marketing_list_bc_advertisers",
+            BC_ADVERTISER_GET_PATH,
+            ["marketing_list_advertisers"],
+            id="bc-advertisers",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_bc_tools_return_sandbox_unavailable_envelope_on_sandbox_404(
+    monkeypatch: pytest.MonkeyPatch,
+    tool_name: str,
+    endpoint: str,
+    alternative_tools: list[str],
+) -> None:
+    backend = await _configured_backend(sandbox=True)
+    _install_request_error(monkeypatch, backend, status=404)
+
+    result = await _call_bc_read_tool(tool_name)
+
+    assert result == {
+        "endpoint_not_available_in_sandbox": True,
+        "tool": tool_name,
+        "alias": ALIAS,
+        "endpoint": endpoint,
+        "message": BC_ENDPOINTS_NOT_AVAILABLE_IN_SANDBOX_MESSAGE,
+        "alternative_tools": alternative_tools,
+    }
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "endpoint"),
+    [
+        pytest.param("marketing_list_business_centers", BC_GET_PATH, id="business-centers"),
+        pytest.param("marketing_list_bc_advertisers", BC_ADVERTISER_GET_PATH, id="bc-advertisers"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_bc_tools_raise_production_404(
+    monkeypatch: pytest.MonkeyPatch,
+    tool_name: str,
+    endpoint: str,
+) -> None:
+    backend = await _configured_backend(sandbox=False)
+    _install_request_error(monkeypatch, backend, status=404)
+
+    with pytest.raises(SanitizedHttpxError) as exc_info:
+        _ = await _call_bc_read_tool(tool_name)
+
+    assert exc_info.value.status == 404
+    assert exc_info.value.url_path == endpoint
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "endpoint"),
+    [
+        pytest.param("marketing_list_business_centers", BC_GET_PATH, id="business-centers"),
+        pytest.param("marketing_list_bc_advertisers", BC_ADVERTISER_GET_PATH, id="bc-advertisers"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_bc_tools_raise_sandbox_non_404_http_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tool_name: str,
+    endpoint: str,
+) -> None:
+    backend = await _configured_backend(sandbox=True)
+    _install_request_error(monkeypatch, backend, status=500)
+
+    with pytest.raises(SanitizedHttpxError) as exc_info:
+        _ = await _call_bc_read_tool(tool_name)
+
+    assert exc_info.value.status == 500
+    assert exc_info.value.url_path == endpoint
+
+
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        pytest.param("marketing_list_business_centers", id="business-centers"),
+        pytest.param("marketing_list_bc_advertisers", id="bc-advertisers"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_bc_tools_preserve_sandbox_success_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tool_name: str,
+) -> None:
+    backend = await _configured_backend(sandbox=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if tool_name == "marketing_list_business_centers":
+            assert request.url.path == BC_GET_PATH
+            return _business_response(request, {"list": [{"bc_id": "bc-1", "bc_name": "Demo BC"}]})
+        assert request.url.path == BC_ADVERTISER_GET_PATH
+        return _business_response(request, {"advertiser_list": [{"advertiser_id": "adv-2"}]})
+
+    _install_client(monkeypatch, backend, handler)
+
+    result = await _call_bc_read_tool(tool_name)
+
+    if tool_name == "marketing_list_business_centers":
+        assert result == [BusinessCenter(bc_id="bc-1", bc_name="Demo BC")]
+    else:
+        assert result == [Advertiser(advertiser_id="adv-2")]
 
 
 @pytest.mark.asyncio
@@ -402,10 +523,37 @@ def _install_client(
     monkeypatch.setattr(marketing_read_tools, "_build_business_client", build_business_client)
 
 
-async def _configured_backend() -> MemoryBackend:
+def _install_request_error(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: MemoryBackend,
+    *,
+    status: int,
+) -> None:
+    async def fake_get_backend() -> MemoryBackend:
+        return backend
+
+    async def fake_request(
+        self: BusinessAPIClient,
+        method: str,
+        path: str,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        _ = self, method, kwargs
+        raise SanitizedHttpxError(status=status, url_path=path, request_id="req-error")
+
+    monkeypatch.setattr(marketing_read_tools, "get_backend", fake_get_backend)
+    monkeypatch.setattr(BusinessAPIClient, "request", fake_request)
+
+
+async def _configured_backend(*, sandbox: bool = False) -> MemoryBackend:
     backend = MemoryBackend()
-    await _store_app_credentials(backend)
-    await _store_marketing_account(backend, alias=ALIAS, access_token="marketing-access")
+    await _store_app_credentials(backend, sandbox=sandbox)
+    await _store_marketing_account(
+        backend,
+        alias=ALIAS,
+        access_token="marketing-access",
+        sandbox=sandbox,
+    )
     return backend
 
 
@@ -414,11 +562,12 @@ async def _store_marketing_account(
     *,
     alias: str,
     access_token: str,
+    sandbox: bool = False,
 ) -> None:
     account = Account(
         alias=alias,
         api_type=ApiType.MARKETING,
-        sandbox=False,
+        sandbox=sandbox,
         tiktok_id=f"{alias}-tiktok-id",
         display_name="Marketing Demo",
         avatar_url=None,
@@ -435,20 +584,28 @@ async def _store_marketing_account(
         last_rotated_at=NOW,
     )
     await backend.set(
-        account_key(ApiType.MARKETING, False, alias),
+        account_key(ApiType.MARKETING, sandbox, alias),
         serialize_account_record(account, tokens),
     )
 
 
-async def _store_app_credentials(backend: MemoryBackend) -> None:
+async def _store_app_credentials(backend: MemoryBackend, *, sandbox: bool = False) -> None:
     payload = {
         "api_type": ApiType.MARKETING.value,
-        "sandbox": False,
+        "sandbox": sandbox,
         "client_id": "marketing-client-id",
         "client_secret": "marketing-client-secret",
         "created_at": NOW.isoformat(),
     }
-    await backend.set(app_creds_key(ApiType.MARKETING, False), json.dumps(payload))
+    await backend.set(app_creds_key(ApiType.MARKETING, sandbox), json.dumps(payload))
+
+
+async def _call_bc_read_tool(tool_name: str) -> object:
+    if tool_name == "marketing_list_business_centers":
+        return await marketing_list_business_centers(ALIAS)
+    if tool_name == "marketing_list_bc_advertisers":
+        return await marketing_list_bc_advertisers(ALIAS, "bc-1")
+    raise AssertionError(f"Unknown BC read tool: {tool_name}")
 
 
 def _business_response(request: httpx.Request, data: object) -> httpx.Response:

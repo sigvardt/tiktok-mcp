@@ -18,6 +18,7 @@ from tiktok_mcp.api.marketing import (
     BusinessCenter,
     Campaign,
 )
+from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError
 from tiktok_mcp.auth.keychain import (
     KeychainBackend,
     app_creds_key,
@@ -41,6 +42,10 @@ BC_ADVERTISER_GET_PATH = "/open_api/v1.3/bc/asset/get/"
 BC_GET_PATH = "/open_api/v1.3/bc/get/"
 CAMPAIGN_GET_PATH = "/open_api/v1.3/campaign/get/"
 USER_INFO_PATH = "/open_api/v1.3/user/info/"
+BC_ENDPOINTS_NOT_AVAILABLE_IN_SANDBOX_MESSAGE = (
+    "Business Center endpoints are not available in the TikTok Business sandbox. "
+    "Use a production account with TIKTOK_MCP_LIVE_ACCOUNT_SAFETY configured to enable."
+)
 
 ACCOUNT_KEY_RE = re.compile(
     r"^tiktok-mcp::marketing::(?P<mode>sandbox|production)::"
@@ -95,18 +100,46 @@ async def marketing_get_advertiser_info(
 
 @app.tool(annotations=ToolAnnotations(readOnlyHint=True))
 @mark_read_only
-async def marketing_list_business_centers(alias: str) -> list[BusinessCenter]:
+async def marketing_list_business_centers(alias: str) -> list[BusinessCenter] | dict[str, object]:
+    """List Business Centers, or report the TikTok sandbox BC endpoint limitation."""
     async with await _marketing_client(alias) as client:
-        payload = await client.request("GET", BC_GET_PATH)
+        try:
+            payload = await client.request("GET", BC_GET_PATH)
+        except SanitizedHttpxError as exc:
+            if _is_sandbox_endpoint_404(client.account, exc, BC_GET_PATH):
+                return _sandbox_bc_endpoint_not_available(
+                    tool="marketing_list_business_centers",
+                    alias=alias,
+                    endpoint=BC_GET_PATH,
+                    alternative_tools=(
+                        "marketing_list_advertisers",
+                        "marketing_list_bc_advertisers",
+                    ),
+                )
+            raise
     return _models_from_payload(payload, BusinessCenter, "list", "business_centers", "bc_list")
 
 
 @app.tool(annotations=ToolAnnotations(readOnlyHint=True))
 @mark_read_only
-async def marketing_list_bc_advertisers(alias: str, bc_id: str) -> list[Advertiser]:
+async def marketing_list_bc_advertisers(
+    alias: str,
+    bc_id: str,
+) -> list[Advertiser] | dict[str, object]:
+    """List BC advertiser assets, or report the TikTok sandbox BC endpoint limitation."""
     params = {"bc_id": bc_id, "asset_type": "ADVERTISER"}
     async with await _marketing_client(alias) as client:
-        payload = await client.request("GET", BC_ADVERTISER_GET_PATH, params=params)
+        try:
+            payload = await client.request("GET", BC_ADVERTISER_GET_PATH, params=params)
+        except SanitizedHttpxError as exc:
+            if _is_sandbox_endpoint_404(client.account, exc, BC_ADVERTISER_GET_PATH):
+                return _sandbox_bc_endpoint_not_available(
+                    tool="marketing_list_bc_advertisers",
+                    alias=alias,
+                    endpoint=BC_ADVERTISER_GET_PATH,
+                    alternative_tools=("marketing_list_advertisers",),
+                )
+            raise
     return _models_from_payload(payload, Advertiser, "list", "advertisers", "advertiser_list")
 
 
@@ -316,6 +349,31 @@ def _advertiser_discovery_not_supported(payload: object) -> dict[str, Any]:
             "core_user_id": user_info.get("core_user_id"),
             "display_name": user_info.get("display_name"),
         },
+    }
+
+
+def _is_sandbox_endpoint_404(
+    account: Account,
+    exc: SanitizedHttpxError,
+    endpoint: str,
+) -> bool:
+    return account.sandbox and exc.status == 404 and exc.url_path == endpoint
+
+
+def _sandbox_bc_endpoint_not_available(
+    *,
+    tool: str,
+    alias: str,
+    endpoint: str,
+    alternative_tools: Sequence[str],
+) -> dict[str, object]:
+    return {
+        "endpoint_not_available_in_sandbox": True,
+        "tool": tool,
+        "alias": alias,
+        "endpoint": endpoint,
+        "message": BC_ENDPOINTS_NOT_AVAILABLE_IN_SANDBOX_MESSAGE,
+        "alternative_tools": list(alternative_tools),
     }
 
 
