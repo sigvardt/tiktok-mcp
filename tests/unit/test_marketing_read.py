@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # pyright: reportMissingTypeStubs=false, reportAny=false
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -121,13 +122,15 @@ async def _configured_backend(*, tiktok_id: str) -> MemoryBackend:
     backend = MemoryBackend()
     await backend.set(
         app_creds_key(ApiType.MARKETING, True),
-        AppCredentials(
-            api_type=ApiType.MARKETING,
-            sandbox=True,
-            client_id=SecretStr("marketing-client-id"),
-            client_secret=SecretStr("marketing-client-secret"),
-            created_at=NOW,
-        ).model_dump_json(),
+        json.dumps(
+            {
+                "api_type": ApiType.MARKETING.value,
+                "sandbox": True,
+                "client_id": "marketing-client-id",
+                "client_secret": "marketing-client-secret",
+                "created_at": NOW.isoformat(),
+            }
+        ),
     )
     account = Account(
         alias=ALIAS,

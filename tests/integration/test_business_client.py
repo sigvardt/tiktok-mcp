@@ -146,7 +146,7 @@ async def test_code_nonzero_raises_business_api_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_refresh_token_immediate_account_broken() -> None:
+async def test_no_refresh_token_auth_error_does_not_persist_broken() -> None:
     backend = MemoryBackend()
     paths: list[str] = []
 
@@ -161,9 +161,8 @@ async def test_no_refresh_token_immediate_account_broken() -> None:
     assert paths == [TEST_PATH]
     assert exc_info.value.context["re_auth_required"] is True
     assert exc_info.value.context["tiktok_code"] == 40100
-    stored_account, stored_tokens = _stored_record(backend)
-    assert stored_account.status is AccountStatus.BROKEN
-    assert stored_tokens.refresh_token is None
+    key = account_key(ApiType.BUSINESS_ORGANIC, sandbox=True, alias="business-demo")
+    assert key not in backend.values
 
 
 @pytest.mark.asyncio

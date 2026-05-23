@@ -19,7 +19,12 @@ from tiktok_mcp.api.marketing import (
     Campaign,
 )
 from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError
-from tiktok_mcp.auth.keychain import account_key, app_creds_key, serialize_account_record
+from tiktok_mcp.auth.keychain import (
+    account_key,
+    app_creds_key,
+    deserialize_account_record,
+    serialize_account_record,
+)
 from tiktok_mcp.observability.rate_limit_tracker import reset_tracker
 from tiktok_mcp.tools import marketing_read as marketing_read_tools
 from tiktok_mcp.tools.marketing_read import (
@@ -42,7 +47,7 @@ from tiktok_mcp.tools.marketing_read import (
 )
 from tiktok_mcp.types.accounts import Account, AccountStatus, AccountTokens, ApiType
 from tiktok_mcp.types.app_credentials import AppCredentials
-from tiktok_mcp.types.errors import BusinessApiError
+from tiktok_mcp.types.errors import AccountBrokenError, BusinessApiError, KeychainUnavailableError
 
 NOW = datetime(2026, 5, 22, 12, 0, tzinfo=UTC)
 ALIAS = "marketing-demo"
@@ -452,6 +457,59 @@ async def test_business_envelope_errors_raise_business_api_error(
 
 
 @pytest.mark.asyncio
+async def test_auth_error_without_refresh_token_does_not_persist_broken(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = await _configured_backend(refresh_token=None)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"code": 40105, "message": "Token expired", "request_id": "req-auth"},
+            request=request,
+        )
+
+    _install_client(monkeypatch, backend, handler)
+
+    with pytest.raises(AccountBrokenError) as exc_info:
+        _ = await marketing_list_campaigns(ALIAS, "adv-1")
+
+    assert exc_info.value.context["tiktok_code"] == 40105
+    stored = backend.values[account_key(ApiType.MARKETING, False, ALIAS)]
+    account, tokens = deserialize_account_record(stored)
+    assert account.status is AccountStatus.OK
+    assert tokens.refresh_token is None
+
+
+@pytest.mark.asyncio
+async def test_masked_app_credentials_raise_clear_error_and_preserve_account_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = MemoryBackend()
+    await _store_masked_app_credentials(backend)
+    await _store_marketing_account(
+        backend,
+        alias=ALIAS,
+        access_token="marketing-access",
+        refresh_token=None,
+    )
+
+    async def fake_get_backend() -> MemoryBackend:
+        return backend
+
+    monkeypatch.setattr(marketing_read_tools, "get_backend", fake_get_backend)
+
+    with pytest.raises(KeychainUnavailableError) as exc_info:
+        _ = await marketing_list_campaigns(ALIAS, "adv-1")
+
+    assert exc_info.value.context["error"] == "app_credentials_masked_or_invalid"
+    stored = backend.values[account_key(ApiType.MARKETING, False, ALIAS)]
+    account, tokens = deserialize_account_record(stored)
+    assert account.status is AccountStatus.OK
+    assert tokens.refresh_token is None
+
+
+@pytest.mark.asyncio
 async def test_multi_account_isolation_uses_distinct_access_token_headers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -545,13 +603,18 @@ def _install_request_error(
     monkeypatch.setattr(BusinessAPIClient, "request", fake_request)
 
 
-async def _configured_backend(*, sandbox: bool = False) -> MemoryBackend:
+async def _configured_backend(
+    *,
+    sandbox: bool = False,
+    refresh_token: str | None = "marketing-refresh",
+) -> MemoryBackend:
     backend = MemoryBackend()
     await _store_app_credentials(backend, sandbox=sandbox)
     await _store_marketing_account(
         backend,
         alias=ALIAS,
         access_token="marketing-access",
+        refresh_token=refresh_token,
         sandbox=sandbox,
     )
     return backend
@@ -562,6 +625,7 @@ async def _store_marketing_account(
     *,
     alias: str,
     access_token: str,
+    refresh_token: str | None = None,
     sandbox: bool = False,
 ) -> None:
     account = Account(
@@ -578,9 +642,9 @@ async def _store_marketing_account(
     )
     tokens = AccountTokens(
         access_token=SecretStr(access_token),
-        refresh_token=SecretStr(f"{alias}-refresh"),
+        refresh_token=SecretStr(refresh_token) if refresh_token is not None else None,
         access_token_expires_at=NOW + timedelta(hours=1),
-        refresh_token_expires_at=NOW + timedelta(days=30),
+        refresh_token_expires_at=NOW + timedelta(days=30) if refresh_token is not None else None,
         last_rotated_at=NOW,
     )
     await backend.set(
@@ -595,6 +659,17 @@ async def _store_app_credentials(backend: MemoryBackend, *, sandbox: bool = Fals
         "sandbox": sandbox,
         "client_id": "marketing-client-id",
         "client_secret": "marketing-client-secret",
+        "created_at": NOW.isoformat(),
+    }
+    await backend.set(app_creds_key(ApiType.MARKETING, sandbox), json.dumps(payload))
+
+
+async def _store_masked_app_credentials(backend: MemoryBackend, *, sandbox: bool = False) -> None:
+    payload = {
+        "api_type": ApiType.MARKETING.value,
+        "sandbox": sandbox,
+        "client_id": "**********",
+        "client_secret": "**********",
         "created_at": NOW.isoformat(),
     }
     await backend.set(app_creds_key(ApiType.MARKETING, sandbox), json.dumps(payload))

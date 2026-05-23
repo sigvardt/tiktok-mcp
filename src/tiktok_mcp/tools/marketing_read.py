@@ -46,6 +46,7 @@ BC_ENDPOINTS_NOT_AVAILABLE_IN_SANDBOX_MESSAGE = (
     "Business Center endpoints are not available in the TikTok Business sandbox. "
     "Use a production account with TIKTOK_MCP_LIVE_ACCOUNT_SAFETY configured to enable."
 )
+MASKED_SECRET_VALUE = "**********"
 
 ACCOUNT_KEY_RE = re.compile(
     r"^tiktok-mcp::marketing::(?P<mode>sandbox|production)::"
@@ -313,12 +314,29 @@ async def _load_app_credentials(
         raise AppCredentialsNotSetError(ApiType.MARKETING.value, account.sandbox)
     try:
         payload = cast(object, json.loads(raw_credentials))
-        return AppCredentials.model_validate(payload)
+        credentials = AppCredentials.model_validate(payload)
     except (json.JSONDecodeError, ValidationError) as exc:
         raise KeychainUnavailableError(
             "Stored Marketing app credentials are invalid.",
             context={"api_type": ApiType.MARKETING.value, "sandbox": account.sandbox},
         ) from exc
+    if _has_masked_app_credentials(credentials):
+        raise KeychainUnavailableError(
+            "Stored Marketing app credentials are masked. Run set_app_credentials again.",
+            context={
+                "error": "app_credentials_masked_or_invalid",
+                "api_type": ApiType.MARKETING.value,
+                "sandbox": account.sandbox,
+            },
+        )
+    return credentials
+
+
+def _has_masked_app_credentials(credentials: AppCredentials) -> bool:
+    return (
+        credentials.client_id.get_secret_value() == MASKED_SECRET_VALUE
+        or credentials.client_secret.get_secret_value() == MASKED_SECRET_VALUE
+    )
 
 
 def _models_from_payload(

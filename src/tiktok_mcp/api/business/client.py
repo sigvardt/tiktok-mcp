@@ -262,7 +262,6 @@ class BusinessAPIClient:
         tokens = await self._ensure_tokens()
         failed_access_token = tokens.access_token.get_secret_value()
         if not self._has_refresh_token(tokens):
-            await self._mark_account_broken()
             raise self._account_broken_error(auth_error) from auth_error
 
         async with await _refresh_lock_for(self.account):
