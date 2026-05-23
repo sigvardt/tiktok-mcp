@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import secrets
+import string
 import urllib.parse
 import webbrowser
 from collections.abc import Mapping
@@ -84,6 +85,8 @@ DISPLAY_SCOPES = ("user.info.basic", "video.list")
 POSTING_SCOPES = ("user.info.basic", "video.publish", "video.upload")
 PKCE_APIS = frozenset({ApiType.DISPLAY, ApiType.CONTENT_POSTING})
 BUSINESS_APIS = frozenset({ApiType.MARKETING, ApiType.BUSINESS_ORGANIC})
+_PKCE_VERIFIER_CHARS = string.ascii_letters + string.digits + "-._~"
+_TIKTOK_PKCE_VERIFIER_LENGTH = 64
 _PENDING_REMOVALS: dict[str, tuple[str, datetime]] = {}
 _PENDING_LOCK = asyncio.Lock()
 _MAX_PENDING_REMOVALS = 100
@@ -430,7 +433,7 @@ def _build_authorization_url(
             "state": state_token,
         }
         if pkce_verifier is not None:
-            params["code_challenge"] = _build_pkce_challenge(pkce_verifier)
+            params["code_challenge"] = _build_tiktok_pkce_challenge(pkce_verifier)
             params["code_challenge_method"] = "S256"
         return f"{DISPLAY_AUTH_URL}?{urllib.parse.urlencode(params)}"
 
@@ -996,13 +999,20 @@ def _valid_alias(alias: str) -> bool:
     return ALIAS_RE.fullmatch(alias) is not None
 
 
-def _build_pkce_challenge(code_verifier: str) -> str:
+def build_rfc7636_pkce_challenge(code_verifier: str) -> str:
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
+def _build_tiktok_pkce_challenge(code_verifier: str) -> str:
+    return hashlib.sha256(code_verifier.encode("ascii")).hexdigest()
+
+
+
 def _new_pkce_verifier() -> str:
-    verifier = secrets.token_urlsafe(32)
+    verifier = "".join(
+        secrets.choice(_PKCE_VERIFIER_CHARS) for _ in range(_TIKTOK_PKCE_VERIFIER_LENGTH)
+    )
     if not 43 <= len(verifier) <= 128:
         raise ValueError(f"Generated PKCE verifier has invalid length {len(verifier)}.")
     return verifier
