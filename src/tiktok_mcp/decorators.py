@@ -17,6 +17,10 @@ WriteApiName = Literal["display", "marketing", "comments", "posting"]
 _VALID_API_NAMESPACES: frozenset[str] = frozenset(
     {"display", "marketing", "comments", "posting"}
 )
+_LIVE_ACCOUNT_SAFETY_ENV = "TIKTOK_MCP_LIVE_ACCOUNT_SAFETY"
+# Secure by default: unset TIKTOK_MCP_LIVE_ACCOUNT_SAFETY locks Display destructive tools;
+# operators must explicitly set TIKTOK_MCP_LIVE_ACCOUNT_SAFETY= to unlock that surface.
+_DEFAULT_LIVE_ACCOUNT_SAFETY_APIS: frozenset[str] = frozenset({"display"})
 _FALSE_VALUES: frozenset[str] = frozenset({"", "0", "false", "no"})
 _TRUE_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "all"})
 _WRITE_PREFIXES: tuple[str, ...] = (
@@ -115,6 +119,43 @@ def writes_enabled_for(api: str, env_value: str | None = None) -> bool:
     return api in parse_writes_env(value)
 
 
+def parse_live_account_safety_env(value: str | None) -> set[str]:
+    if value is None:
+        return set(_DEFAULT_LIVE_ACCOUNT_SAFETY_APIS)
+
+    normalized_value = value.strip().lower()
+    if normalized_value in _FALSE_VALUES:
+        return set()
+    if normalized_value in _TRUE_VALUES:
+        return set(_VALID_API_NAMESPACES)
+
+    locked_namespaces: set[str] = set()
+    for token in value.split(","):
+        normalized_token = token.strip().lower()
+        if not normalized_token:
+            continue
+        if normalized_token in _VALID_API_NAMESPACES:
+            locked_namespaces.add(normalized_token)
+        elif normalized_token == "all":
+            locked_namespaces.update(_VALID_API_NAMESPACES)
+        else:
+            logger.warning(
+                "Unknown %s token %r ignored",
+                _LIVE_ACCOUNT_SAFETY_ENV,
+                normalized_token,
+            )
+
+    return locked_namespaces
+
+
+def live_account_safety_locked_for(api: str, env_value: str | None = None) -> bool:
+    if api not in _VALID_API_NAMESPACES:
+        raise ValueError(f"Unknown TikTok MCP write API namespace: {api!r}")
+
+    value = os.environ.get(_LIVE_ACCOUNT_SAFETY_ENV) if env_value is None else env_value
+    return api in parse_live_account_safety_env(value)
+
+
 def parse_account_changes_env(value: str | None) -> bool:
     if value is None:
         return False
@@ -153,6 +194,14 @@ def require_writes_enabled(
             *args: _Params.args,
             **kwargs: _Params.kwargs,
         ) -> _ReturnT | dict[str, Any]:
+            if live_account_safety_locked_for(api):
+                logger.info(
+                    "Live-account safety locked %s tool %s",
+                    api,
+                    fn.__name__,
+                )
+                return _live_account_safety_locked_error(fn, api)
+
             if writes_enabled_for(api):
                 return await fn(*args, **kwargs)
 
@@ -239,6 +288,30 @@ def _writes_disabled_error(fn: Callable[..., object], api: str) -> dict[str, Any
     }
 
 
+def _live_account_safety_locked_error(fn: Callable[..., object], api: str) -> dict[str, Any]:
+    env_value = os.environ.get(_LIVE_ACCOUNT_SAFETY_ENV)
+    reason = (
+        f"{_LIVE_ACCOUNT_SAFETY_ENV} is unset, so its secure default locks 'display'."
+        if env_value is None
+        else f"{_LIVE_ACCOUNT_SAFETY_ENV} includes '{api}'."
+    )
+    return {
+        "error": "live_account_safety_locked",
+        "message": (
+            f"Destructive tools for '{api}' are locked by {_LIVE_ACCOUNT_SAFETY_ENV} "
+            "before client construction or HTTP work."
+        ),
+        "reason": reason,
+        "unlock_hint": (
+            f"set {_LIVE_ACCOUNT_SAFETY_ENV}= or "
+            f"{_LIVE_ACCOUNT_SAFETY_ENV}=<api_csv_without_this_api>"
+        ),
+        "tool": fn.__name__,
+        "api": api,
+        "would_have_done": getattr(fn, "__tiktok_mcp_summary__", f"{fn.__name__}(...)")
+    }
+
+
 def _account_changes_disabled_error(fn: Callable[..., object]) -> dict[str, Any]:
     return {
         "error": "account_changes_disabled",
@@ -284,8 +357,10 @@ __all__ = [
     "account_changes_enabled",
     "assert_tool_decoration_compliance",
     "is_destructive",
+    "live_account_safety_locked_for",
     "mark_read_only",
     "parse_account_changes_env",
+    "parse_live_account_safety_env",
     "parse_writes_env",
     "require_account_changes_enabled",
     "require_writes_enabled",

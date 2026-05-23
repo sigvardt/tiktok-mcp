@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol, cast
 
 import pytest
 
+import tiktok_mcp.decorators as decorators
 from tiktok_mcp.decorators import (
     _VALID_API_NAMESPACES,
     account_changes_enabled,
@@ -19,6 +22,8 @@ from tiktok_mcp.decorators import (
     require_writes_enabled,
     writes_enabled_for,
 )
+from tiktok_mcp.tools import display_read as display_read_tools
+from tiktok_mcp.types.accounts import Account, AccountStatus, ApiType
 
 ALL_APIS = set(_VALID_API_NAMESPACES)
 TRUTH_TABLE_CASES: tuple[tuple[str | None, set[str]], ...] = (
@@ -43,6 +48,15 @@ TRUTH_TABLE_CASES: tuple[tuple[str | None, set[str]], ...] = (
     ("all,foo", ALL_APIS),
     ("posting,display,unknown,marketing", {"posting", "display", "marketing"}),
 )
+LIVE_ACCOUNT_SAFETY_TRUTH_TABLE_CASES: tuple[tuple[str | None, set[str]], ...] = (
+    (None, {"display"}),
+    ("", set()),
+    ("display", {"display"}),
+    ("display,marketing", {"display", "marketing"}),
+    ("marketing", {"marketing"}),
+    ("DISPLAY", {"display"}),
+    (" display ", {"display"}),
+)
 
 
 class _DecoratedWriteTool(Protocol):
@@ -52,6 +66,14 @@ class _DecoratedWriteTool(Protocol):
 
 class _SummaryTool(Protocol):
     __tiktok_mcp_summary__: str
+
+
+class _FakeDisplayClient:
+    def __init__(self) -> None:
+        self.closed: bool = False
+
+    async def aclose(self) -> None:
+        self.closed = True
 
 
 @pytest.mark.parametrize(("value", "expected"), TRUTH_TABLE_CASES)
@@ -296,3 +318,169 @@ async def test_structured_error_uses_summary_attribute() -> None:
     result = await decorated_delete_x()
 
     assert result["would_have_done"] == "would delete x"
+
+
+@pytest.mark.parametrize(("value", "expected"), LIVE_ACCOUNT_SAFETY_TRUTH_TABLE_CASES)
+def test_live_account_safety_env_truth_table(value: str | None, expected: set[str]) -> None:
+    """Live-account safety env parsing is default-locked for Display."""
+    assert decorators.parse_live_account_safety_env(value) == expected
+
+
+def test_live_account_safety_default_locked_reads_real_unset_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unset TIKTOK_MCP_LIVE_ACCOUNT_SAFETY locks Display through os.environ."""
+    monkeypatch.delenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", raising=False)
+
+    assert "TIKTOK_MCP_LIVE_ACCOUNT_SAFETY" not in os.environ
+    assert decorators.live_account_safety_locked_for("display") is True
+    assert decorators.live_account_safety_locked_for("marketing") is False
+
+
+@pytest.mark.asyncio
+async def test_live_account_safety_blocks_even_when_display_writes_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The safety lock wins over TIKTOK_MCP_ALLOW_WRITES=display."""
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "display")
+    monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "display")
+    inner_called = False
+
+    @require_writes_enabled("display")
+    async def revoke_display_token() -> dict[str, bool]:
+        nonlocal inner_called
+        inner_called = True
+        return {"ok": True}
+
+    with caplog.at_level(logging.INFO, logger="tiktok_mcp.decorators"):
+        result = await revoke_display_token()
+
+    assert inner_called is False
+    assert result["error"] == "live_account_safety_locked"
+    assert result["api"] == "display"
+    assert result["tool"] == "revoke_display_token"
+    assert result["unlock_hint"] == (
+        "set TIKTOK_MCP_LIVE_ACCOUNT_SAFETY= or "
+        "TIKTOK_MCP_LIVE_ACCOUNT_SAFETY=<api_csv_without_this_api>"
+    )
+    assert "TIKTOK_MCP_LIVE_ACCOUNT_SAFETY includes 'display'" in str(result["reason"])
+    assert any(
+        "Live-account safety locked display tool revoke_display_token" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_live_account_safety_unlocked_still_requires_writes_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unlocking safety does not weaken the existing writes-disabled behavior."""
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
+    monkeypatch.delenv("TIKTOK_MCP_ALLOW_WRITES", raising=False)
+    inner_called = False
+
+    @require_writes_enabled("display")
+    async def refresh_display_token() -> dict[str, bool]:
+        nonlocal inner_called
+        inner_called = True
+        return {"ok": True}
+
+    result = await refresh_display_token()
+
+    assert inner_called is False
+    assert result["error"] == "writes_disabled"
+    assert result["api"] == "display"
+
+
+@pytest.mark.asyncio
+async def test_live_account_safety_unlocked_and_writes_enabled_calls_inner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both gates must pass before the destructive tool function runs."""
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "marketing")
+    monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "display")
+    inner_call_count = 0
+
+    @require_writes_enabled("display")
+    async def refresh_display_token() -> dict[str, bool]:
+        nonlocal inner_call_count
+        inner_call_count += 1
+        return {"ok": True}
+
+    assert await refresh_display_token() == {"ok": True}
+    assert inner_call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_live_account_safety_ordering_prevents_writes_check_shadowing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Safety-locked envelopes are returned before writes_enabled_for is consulted."""
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "display")
+    monkeypatch.delenv("TIKTOK_MCP_ALLOW_WRITES", raising=False)
+
+    def fail_if_consulted(api: str, env_value: str | None = None) -> bool:
+        raise AssertionError(f"writes_enabled_for should not run for {api} {env_value}")
+
+    monkeypatch.setattr(decorators, "writes_enabled_for", fail_if_consulted)
+
+    @require_writes_enabled("display")
+    async def delete_display_state() -> dict[str, bool]:
+        return {"ok": True}
+
+    result = await delete_display_state()
+
+    assert result["error"] == "live_account_safety_locked"
+    assert result["api"] == "display"
+
+
+@pytest.mark.asyncio
+async def test_display_read_tool_still_works_when_live_safety_locked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Display read tools are unaffected by the destructive live-account lock."""
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "display")
+    fake_client = _FakeDisplayClient()
+
+    async def build_display_client(
+        alias: str,
+        *,
+        sandbox: bool | None = None,
+    ) -> tuple[Account, _FakeDisplayClient]:
+        assert alias == "display-alias"
+        assert sandbox is None
+        return (
+            Account(
+                alias="display-alias",
+                api_type=ApiType.DISPLAY,
+                sandbox=False,
+                tiktok_id="display-user",
+                scopes=["user.info.basic"],
+                status=AccountStatus.OK,
+            ),
+            fake_client,
+        )
+
+    async def request_json_object(
+        client: _FakeDisplayClient,
+        method: str,
+        path: str,
+        *,
+        params: Mapping[str, str | int | float | bool | None] | None = None,
+        json_body: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        assert client is fake_client
+        assert method == "GET"
+        assert path == display_read_tools.USER_INFO_PATH
+        assert params == {"fields": "open_id"}
+        assert json_body is None
+        return {"user": {"open_id": "open-basic", "display_name": "Basic Creator"}}
+
+    monkeypatch.setattr(display_read_tools, "_build_display_client", build_display_client)
+    monkeypatch.setattr(display_read_tools, "_request_json_object", request_json_object)
+
+    result = await display_read_tools.display_get_user_info("display-alias", fields=["open_id"])
+
+    assert result["open_id"] == "open-basic"
+    assert fake_client.closed is True

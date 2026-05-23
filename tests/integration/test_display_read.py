@@ -235,6 +235,11 @@ async def test_display_refresh_token_is_gated_and_forces_refresh(
     _patch_http_client(monkeypatch, handler)
 
     blocked = await display_refresh_token(ALIAS)
+    assert blocked["error"] == "live_account_safety_locked"
+    assert requests == []
+
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
+    blocked = await display_refresh_token(ALIAS)
     assert blocked["error"] == "writes_disabled"
     assert requests == []
 
@@ -265,6 +270,11 @@ async def test_display_revoke_token_is_gated_and_marks_revoked_without_delete(
 
     _patch_http_client(monkeypatch, handler)
 
+    blocked = await display_revoke_token(ALIAS)
+    assert blocked["error"] == "live_account_safety_locked"
+    assert requests == []
+
+    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     blocked = await display_revoke_token(ALIAS)
     assert blocked["error"] == "writes_disabled"
     assert requests == []
