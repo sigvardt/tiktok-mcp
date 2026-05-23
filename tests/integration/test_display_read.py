@@ -25,7 +25,7 @@ from tiktok_mcp.observability.rate_limit_tracker import reset_tracker
 from tiktok_mcp.tools import display_read as display_read_tools
 from tiktok_mcp.tools.display_read import (
     DEFAULT_USER_FIELDS,
-    DEFAULT_VIDEO_FIELDS,
+    LIST_VIDEO_FIELDS,
     OAUTH_REVOKE_PATH,
     USER_INFO_PATH,
     VIDEO_LIST_PATH,
@@ -111,7 +111,7 @@ async def test_display_get_user_info_uses_scope_gated_default_fields(
 
 
 @pytest.mark.asyncio
-async def test_display_list_videos_preserves_pagination_passthrough(
+async def test_display_list_videos_uses_native_fields_without_enrichment(
     backend: MemoryBackend,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -132,11 +132,17 @@ async def test_display_list_videos_preserves_pagination_passthrough(
 
     _patch_http_client(monkeypatch, handler)
 
-    result = await display_list_videos(ALIAS, cursor=123, max_count=7)
+    result = await display_list_videos(
+        ALIAS,
+        cursor=123,
+        max_count=7,
+        fields=list(LIST_VIDEO_FIELDS),
+    )
 
+    assert len(requests) == 1
     assert requests[0].method == "POST"
     assert requests[0].url.path == VIDEO_LIST_PATH
-    assert requests[0].url.params["fields"] == ",".join(DEFAULT_VIDEO_FIELDS)
+    assert requests[0].url.params["fields"] == ",".join(LIST_VIDEO_FIELDS)
     assert _json_body(requests[0]) == {
         "cursor": 123,
         "max_count": 7,
@@ -144,6 +150,89 @@ async def test_display_list_videos_preserves_pagination_passthrough(
     assert result["cursor"] == 456
     assert result["has_more"] is True
     assert cast(list[dict[str, object]], result["videos"])[0]["id"] == "video-1"
+
+
+@pytest.mark.asyncio
+async def test_display_list_videos_enriches_query_only_fields_in_one_batch(
+    backend: MemoryBackend,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    await _store_app_credentials(backend)
+    await _store_display_account(backend, ALIAS)
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == VIDEO_LIST_PATH:
+            return _display_response(
+                request,
+                {
+                    "videos": [_list_video_payload("video-1")],
+                    "cursor": 0,
+                    "has_more": False,
+                },
+            )
+        return _display_response(
+            request,
+            {"videos": [_video_payload("video-1", view_count=4_438, like_count=4)]},
+        )
+
+    _patch_http_client(monkeypatch, handler)
+    caplog.set_level("INFO", logger="tiktok_mcp.tools.display_read")
+
+    result = await display_list_videos(
+        ALIAS,
+        fields=["id", "title", "duration", "view_count", "like_count"],
+    )
+
+    assert [request.url.path for request in requests] == [VIDEO_LIST_PATH, VIDEO_QUERY_PATH]
+    assert requests[0].url.params["fields"] == "id,title"
+    assert _json_body(requests[1]) == {"filters": {"video_ids": ["video-1"]}}
+    assert requests[1].url.params["fields"] == "id,duration,view_count,like_count"
+    video = cast(list[dict[str, object]], result["videos"])[0]
+    assert video["title"] == "Demo"
+    assert video["duration"] == 12
+    assert video["view_count"] == 4_438
+    assert video["like_count"] == 4
+    assert "Auto-enriching Display video/list response via video/query" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_display_list_videos_enrich_false_returns_raw_list_shape(
+    backend: MemoryBackend,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _store_app_credentials(backend)
+    await _store_display_account(backend, ALIAS)
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return _display_response(
+            request,
+            {
+                "videos": [_list_video_payload("video-1")],
+                "cursor": 0,
+                "has_more": False,
+            },
+        )
+
+    _patch_http_client(monkeypatch, handler)
+
+    result = await display_list_videos(
+        ALIAS,
+        fields=["id", "title", "duration", "view_count"],
+        enrich=False,
+    )
+
+    assert len(requests) == 1
+    assert requests[0].url.path == VIDEO_LIST_PATH
+    assert requests[0].url.params["fields"] == "id,title,duration,view_count"
+    video = cast(list[dict[str, object]], result["videos"])[0]
+    assert video["title"] == "Demo"
+    assert video["duration"] is None
+    assert video["view_count"] is None
 
 
 @pytest.mark.asyncio
@@ -439,6 +528,26 @@ def _json_body(request: httpx.Request) -> dict[str, object]:
     payload = cast(object, json.loads(request.content.decode()))
     assert isinstance(payload, dict)
     return {str(key): value for key, value in payload.items()}
+
+
+def _list_video_payload(video_id: str) -> dict[str, object]:
+    return {
+        "id": video_id,
+        "title": "Demo",
+        "create_time": None,
+        "cover_image_url": None,
+        "share_url": None,
+        "video_description": None,
+        "duration": None,
+        "height": None,
+        "width": None,
+        "embed_html": None,
+        "embed_link": None,
+        "like_count": None,
+        "comment_count": None,
+        "share_count": None,
+        "view_count": None,
+    }
 
 
 def _video_payload(

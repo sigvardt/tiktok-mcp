@@ -6,6 +6,7 @@ from __future__ import annotations
 # pyright: reportUnknownArgumentType=false, reportUnknownVariableType=false
 # pyright: reportUnusedCallResult=false
 import json
+import logging
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import cast
@@ -32,6 +33,8 @@ VIDEO_LIST_PATH = "/v2/video/list/"
 VIDEO_QUERY_PATH = "/v2/video/query/"
 OAUTH_REVOKE_PATH = "/v2/oauth/revoke/"
 MAX_QUERY_VIDEO_IDS = 20
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_USER_FIELDS: tuple[str, ...] = (
     "open_id",
@@ -66,6 +69,11 @@ DEFAULT_VIDEO_FIELDS: tuple[str, ...] = (
     "share_count",
     "view_count",
 )
+LIST_VIDEO_FIELDS: tuple[str, ...] = (
+    "id",
+    "title",
+)
+QUERY_VIDEO_FIELDS: tuple[str, ...] = DEFAULT_VIDEO_FIELDS
 VIDEO_METRICS_FIELDS: tuple[str, ...] = (
     "id",
     "view_count",
@@ -75,6 +83,7 @@ VIDEO_METRICS_FIELDS: tuple[str, ...] = (
     "embed_html",
     "embed_link",
 )
+_VIDEO_QUERY_ENRICHMENT_FIELD_NAMES = frozenset(QUERY_VIDEO_FIELDS) - frozenset(LIST_VIDEO_FIELDS)
 USER_FIELD_SCOPES: Mapping[str, str] = {
     "bio_description": "user.info.profile",
     "is_verified": "user.info.profile",
@@ -120,10 +129,18 @@ async def display_list_videos(
     max_count: int = 20,
     fields: list[str] | None = None,
     sandbox: bool | None = None,
+    enrich: bool = True,
 ) -> dict[str, object]:
-    """List Display API videos with TikTok's native cursor pagination."""
+    """List videos and auto-fill rich fields via video/query when requested.
+
+    TikTok's video/list surface is reliable for LIST_VIDEO_FIELDS. Rich Video Object
+    fields such as duration, cover_image_url, share_url, create_time, and engagement
+    counts are fetched in one batched video/query call when enrich is true. Pass
+    enrich=False to return the raw video/list shape without the extra request.
+    """
     _account, client = await _build_display_client(alias, sandbox=sandbox)
     request_fields = _field_list(fields, DEFAULT_VIDEO_FIELDS)
+    list_fields = _list_video_fields(request_fields, enrich=enrich)
     body: dict[str, object] = {"max_count": max_count}
     if cursor is not None:
         body["cursor"] = cursor
@@ -133,13 +150,14 @@ async def display_list_videos(
             client,
             "POST",
             VIDEO_LIST_PATH,
-            params=_fields_params(request_fields),
+            params=_fields_params(list_fields),
             json_body=body,
         )
+        videos = [_dump_video(video_payload) for video_payload in _object_list(data, "videos")]
+        videos = await _enrich_list_videos(client, videos, request_fields, enrich=enrich)
     finally:
         await client.aclose()
 
-    videos = [_dump_video(video_payload) for video_payload in _object_list(data, "videos")]
     return {
         "videos": videos,
         "cursor": _required_int(data, "cursor"),
@@ -186,19 +204,60 @@ async def _query_videos(
 
     _account, client = await _build_display_client(alias, sandbox=sandbox)
     request_fields = _field_list(fields, DEFAULT_VIDEO_FIELDS)
-    body = {"filters": {"video_ids": video_ids}}
     try:
+        video_payloads = await _query_video_payloads(client, video_ids, request_fields)
+    finally:
+        await client.aclose()
+
+    return [_dump_video(video_payload) for video_payload in video_payloads]
+
+
+async def _enrich_list_videos(
+    client: DisplayAPIClient,
+    videos: list[dict[str, object]],
+    request_fields: Sequence[str],
+    *,
+    enrich: bool,
+) -> list[dict[str, object]]:
+    query_fields = _query_enrichment_fields(request_fields, enrich=enrich)
+    if not query_fields or not videos:
+        return videos
+
+    video_ids = [str(video["id"]) for video in videos]
+    logger.info(
+        "%s alias=%s video_count=%s fields=%s",
+        "Auto-enriching Display video/list response via video/query",
+        client.account.alias,
+        len(video_ids),
+        ",".join(query_fields),
+    )
+    query_payloads = await _query_video_payloads(client, video_ids, query_fields)
+    enrichment_by_id = _video_enrichment_by_id(query_payloads, query_fields)
+
+    enriched_videos: list[dict[str, object]] = []
+    for video in videos:
+        enriched_video = dict(video)
+        enriched_video.update(enrichment_by_id.get(str(video["id"]), {}))
+        enriched_videos.append(enriched_video)
+    return enriched_videos
+
+
+async def _query_video_payloads(
+    client: DisplayAPIClient,
+    video_ids: Sequence[str],
+    fields: Sequence[str],
+) -> list[dict[str, object]]:
+    video_payloads: list[dict[str, object]] = []
+    for batch in _chunks(video_ids, MAX_QUERY_VIDEO_IDS):
         data = await _request_json_object(
             client,
             "POST",
             VIDEO_QUERY_PATH,
-            params=_fields_params(request_fields),
-            json_body=body,
+            params=_fields_params(fields),
+            json_body={"filters": {"video_ids": list(batch)}},
         )
-    finally:
-        await client.aclose()
-
-    return [_dump_video(video_payload) for video_payload in _object_list(data, "videos")]
+        video_payloads.extend(_object_list(data, "videos"))
+    return video_payloads
 
 
 @app.tool(annotations=ToolAnnotations(destructiveHint=True))
@@ -350,6 +409,50 @@ def _field_list(fields: Sequence[str] | None, defaults: Sequence[str]) -> list[s
     return list(fields)
 
 
+def _list_video_fields(request_fields: Sequence[str], *, enrich: bool) -> list[str]:
+    if not enrich:
+        return list(request_fields)
+    return _with_required_video_id(
+        [field for field in request_fields if field not in _VIDEO_QUERY_ENRICHMENT_FIELD_NAMES]
+    )
+
+
+def _query_enrichment_fields(request_fields: Sequence[str], *, enrich: bool) -> list[str]:
+    if not enrich:
+        return []
+    enrichment_fields = [
+        field for field in request_fields if field in _VIDEO_QUERY_ENRICHMENT_FIELD_NAMES
+    ]
+    if not enrichment_fields:
+        return []
+    return _with_required_video_id(enrichment_fields)
+
+
+def _with_required_video_id(fields: Sequence[str]) -> list[str]:
+    request_fields = list(fields)
+    if "id" in request_fields:
+        return request_fields
+    return ["id", *request_fields]
+
+
+def _video_enrichment_by_id(
+    video_payloads: Sequence[Mapping[str, object]],
+    fields: Sequence[str],
+) -> dict[str, dict[str, object]]:
+    enrichment_by_id: dict[str, dict[str, object]] = {}
+    for video_payload in video_payloads:
+        dumped_video = _dump_video(video_payload)
+        video_id = str(dumped_video["id"])
+        enrichment_by_id[video_id] = {
+            field: dumped_video[field] for field in fields if field in dumped_video
+        }
+    return enrichment_by_id
+
+
+def _chunks(items: Sequence[str], size: int) -> list[Sequence[str]]:
+    return [items[start_index : start_index + size] for start_index in range(0, len(items), size)]
+
+
 def _fields_params(fields: Sequence[str]) -> dict[str, str]:
     return {"fields": ",".join(fields)}
 
@@ -405,7 +508,9 @@ def _optional_datetime_to_json(value: datetime | None) -> str | None:
 __all__ = [
     "DEFAULT_USER_FIELDS",
     "DEFAULT_VIDEO_FIELDS",
+    "LIST_VIDEO_FIELDS",
     "MAX_QUERY_VIDEO_IDS",
+    "QUERY_VIDEO_FIELDS",
     "VIDEO_METRICS_FIELDS",
     "display_get_user_info",
     "display_get_video_metrics",
