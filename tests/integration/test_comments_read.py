@@ -26,8 +26,8 @@ from tiktok_mcp.types.accounts import AccountStatus, AccountWithTokens, ApiType
 from tiktok_mcp.types.app_credentials import AppCredentials
 
 ALIAS = "comments-demo"
-ADVERTISER_ID = "advertiser-123"
-POST_ID = "video-456"
+BUSINESS_ID = "business-open-id"
+VIDEO_ID = "video-456"
 COMMENT_ID = "comment-001"
 CASSETTE_DIR = Path(__file__).resolve().parents[1] / "cassettes"
 LONG_COMMENT_TEXT = (
@@ -82,27 +82,36 @@ async def test_comments_list_happy_path_with_scrubbed_cassette(
 
     result = await comments_list(
         ALIAS,
-        ADVERTISER_ID,
-        POST_ID,
-        page=1,
-        page_size=30,
-        sort_by="newest",
+        VIDEO_ID,
+        business_id=BUSINESS_ID,
+        cursor=0,
+        max_count=30,
+        status="ALL",
+        sort_field="create_time",
+        sort_order="desc",
+        include_replies=True,
     )
 
     comments = cast(list[dict[str, object]], result["comments"])
-    assert result["page"] == 1
-    assert result["page_size"] == 30
+    assert result["cursor"] == 1
+    assert result["has_more"] is False
+    assert result["max_count"] == 30
     assert result["total"] == 1
     assert comments[0]["comment_id"] == COMMENT_ID
     assert comments[0]["text"] == "[SCRUBBED]"
+    assert comments[0]["like_count"] == 14
+    assert comments[0]["reply_count"] == 2
     assert seen_requests[0].url.path == COMMENT_LIST_PATH
     assert seen_requests[0].headers["Access-Token"] == "comment-access-token"
     assert dict(seen_requests[0].url.params) == {
-        "advertiser_id": ADVERTISER_ID,
-        "post_id": POST_ID,
-        "page": "1",
-        "page_size": "30",
-        "sort_by": "newest",
+        "business_id": BUSINESS_ID,
+        "video_id": VIDEO_ID,
+        "status": "ALL",
+        "cursor": "0",
+        "max_count": "30",
+        "sort_field": "create_time",
+        "sort_order": "desc",
+        "include_replies": "true",
     }
 
 
@@ -121,27 +130,55 @@ async def test_comments_list_replies_happy_path_with_scrubbed_cassette(
 
     result = await comments_list_replies(
         ALIAS,
-        ADVERTISER_ID,
-        POST_ID,
+        VIDEO_ID,
         COMMENT_ID,
-        page=2,
-        page_size=10,
+        business_id=BUSINESS_ID,
+        cursor=2,
+        max_count=10,
+        status="PUBLIC",
+        sort_field="create_time",
+        sort_order="asc",
     )
 
     comments = cast(list[dict[str, object]], result["comments"])
-    assert result["page"] == 2
-    assert result["page_size"] == 10
+    assert result["cursor"] == 3
+    assert result["has_more"] is False
+    assert result["max_count"] == 10
     assert result["total"] == 1
     assert comments[0]["parent_comment_id"] == COMMENT_ID
     assert comments[0]["text"] == "[SCRUBBED]"
     assert seen_requests[0].url.path == COMMENT_REPLY_LIST_PATH
     assert dict(seen_requests[0].url.params) == {
-        "advertiser_id": ADVERTISER_ID,
-        "post_id": POST_ID,
+        "business_id": BUSINESS_ID,
+        "video_id": VIDEO_ID,
         "comment_id": COMMENT_ID,
-        "page": "2",
-        "page_size": "10",
+        "status": "PUBLIC",
+        "cursor": "2",
+        "max_count": "10",
+        "sort_field": "create_time",
+        "sort_order": "asc",
     }
+
+
+@pytest.mark.asyncio
+async def test_comments_list_uses_stored_business_id_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_client = FakeCommentsClient(_raw_comment_payload(text="[SCRUBBED]"))
+    monkeypatch.setattr(comments_read_tools, "_build_comments_client", lambda alias: fake_client)
+
+    async def business_id_for_alias(alias: str) -> str:
+        assert alias == ALIAS
+        return BUSINESS_ID
+
+    monkeypatch.setattr(comments_read_tools, "_business_id_for_alias", business_id_for_alias)
+
+    _ = await comments_list(ALIAS, VIDEO_ID)
+
+    _path, params = fake_client.requests[0]
+    assert params is not None
+    assert params["business_id"] == BUSINESS_ID
+    assert params["video_id"] == VIDEO_ID
 
 
 @pytest.mark.asyncio
@@ -153,7 +190,7 @@ async def test_comment_text_is_not_logged_at_info(
     monkeypatch.setattr(comments_read_tools, "_build_comments_client", lambda alias: fake_client)
 
     with caplog.at_level(logging.INFO, logger="tiktok_mcp.tools.comments_read"):
-        result = await comments_list(ALIAS, ADVERTISER_ID, POST_ID)
+        result = await comments_list(ALIAS, VIDEO_ID, business_id=BUSINESS_ID)
 
     comments = cast(list[dict[str, object]], result["comments"])
     assert comments[0]["text"] == LONG_COMMENT_TEXT
@@ -171,13 +208,13 @@ async def test_debug_comment_body_logging_requires_env_opt_in(
     monkeypatch.delenv("TIKTOK_MCP_LOG_COMMENT_BODIES", raising=False)
 
     with caplog.at_level(logging.DEBUG, logger="tiktok_mcp.tools.comments_read"):
-        _ = await comments_list(ALIAS, ADVERTISER_ID, POST_ID)
+        _ = await comments_list(ALIAS, VIDEO_ID, business_id=BUSINESS_ID)
     assert LONG_COMMENT_TEXT not in caplog.text
 
     caplog.clear()
     monkeypatch.setenv("TIKTOK_MCP_LOG_COMMENT_BODIES", "1")
     with caplog.at_level(logging.DEBUG, logger="tiktok_mcp.tools.comments_read"):
-        _ = await comments_list(ALIAS, ADVERTISER_ID, POST_ID)
+        _ = await comments_list(ALIAS, VIDEO_ID, business_id=BUSINESS_ID)
     assert LONG_COMMENT_TEXT in caplog.text
 
 
@@ -328,7 +365,9 @@ def _raw_comment_payload(text: str) -> dict[str, Any]:
             }
         ],
         "page": 1,
-        "page_size": 30,
+        "max_count": 30,
+        "cursor": 1,
+        "has_more": False,
         "total": 1,
     }
 

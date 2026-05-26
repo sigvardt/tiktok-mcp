@@ -58,20 +58,29 @@ class CommentBusinessClientContext(Protocol):
 @mark_read_only
 async def comments_list(
     alias: str,
-    advertiser_id: str,
-    post_id: str,
-    page: int = 1,
-    page_size: int = 30,
-    sort_by: Literal["newest", "top"] = "newest",
+    video_id: str,
+    business_id: str | None = None,
+    cursor: int = 0,
+    max_count: int = 20,
+    status: Literal["PUBLIC", "ALL"] = "ALL",
+    sort_field: Literal["likes", "replies", "create_time"] | None = None,
+    sort_order: Literal["asc", "desc", "smart"] | None = None,
+    include_replies: bool = False,
+    comment_ids: list[str] | None = None,
 ) -> dict[str, object]:
+    resolved_business_id = business_id or await _business_id_for_alias(alias)
     async with _build_comments_client(alias) as client:
         return await _comments_list_with_client(
             client,
-            advertiser_id=advertiser_id,
-            post_id=post_id,
-            page=page,
-            page_size=page_size,
-            sort_by=sort_by,
+            business_id=resolved_business_id,
+            video_id=video_id,
+            cursor=cursor,
+            max_count=max_count,
+            status=status,
+            sort_field=sort_field,
+            sort_order=sort_order,
+            include_replies=include_replies,
+            comment_ids=comment_ids,
         )
 
 
@@ -79,47 +88,72 @@ async def comments_list(
 @mark_read_only
 async def comments_list_replies(
     alias: str,
-    advertiser_id: str,
-    post_id: str,
+    video_id: str,
     comment_id: str,
-    page: int = 1,
-    page_size: int = 30,
+    business_id: str | None = None,
+    cursor: int = 0,
+    max_count: int = 20,
+    status: Literal["PUBLIC", "ALL"] = "ALL",
+    sort_field: Literal["likes", "replies", "create_time"] | None = None,
+    sort_order: Literal["asc", "desc"] | None = None,
 ) -> dict[str, object]:
+    resolved_business_id = business_id or await _business_id_for_alias(alias)
     async with _build_comments_client(alias) as client:
         return await _comments_list_replies_with_client(
             client,
-            advertiser_id=advertiser_id,
-            post_id=post_id,
+            business_id=resolved_business_id,
+            video_id=video_id,
             comment_id=comment_id,
-            page=page,
-            page_size=page_size,
+            cursor=cursor,
+            max_count=max_count,
+            status=status,
+            sort_field=sort_field,
+            sort_order=sort_order,
         )
 
 
 async def _comments_list_with_client(
     client: CommentBusinessClient,
     *,
-    advertiser_id: str,
-    post_id: str,
-    page: int,
-    page_size: int,
-    sort_by: Literal["newest", "top"],
+    business_id: str,
+    video_id: str,
+    cursor: int,
+    max_count: int,
+    status: Literal["PUBLIC", "ALL"],
+    sort_field: Literal["likes", "replies", "create_time"] | None,
+    sort_order: Literal["asc", "desc", "smart"] | None,
+    include_replies: bool,
+    comment_ids: list[str] | None,
 ) -> dict[str, object]:
+    checked_max_count = _validate_max_count(max_count)
+    checked_cursor = _validate_cursor(cursor)
+    checked_comment_ids = _validate_comment_ids(comment_ids)
+    params: dict[str, str | int | bool] = {
+        "business_id": business_id,
+        "video_id": video_id,
+        "status": status,
+        "cursor": checked_cursor,
+        "max_count": checked_max_count,
+    }
+    if sort_field is not None:
+        params["sort_field"] = sort_field
+    if sort_order is not None:
+        params["sort_order"] = sort_order
+    if include_replies:
+        params["include_replies"] = include_replies
+    if checked_comment_ids:
+        params["comment_ids"] = json.dumps(checked_comment_ids, separators=(",", ":"))
+
     payload = await client.get(
         COMMENT_LIST_PATH,
-        params={
-            "advertiser_id": advertiser_id,
-            "post_id": post_id,
-            "page": page,
-            "page_size": page_size,
-            "sort_by": sort_by,
-        },
+        params=params,
     )
     return _comments_page_from_payload(
         payload,
-        requested_page=page,
-        requested_page_size=page_size,
-        post_id=post_id,
+        requested_cursor=checked_cursor,
+        requested_max_count=checked_max_count,
+        business_id=business_id,
+        video_id=video_id,
         parent_comment_id=None,
         operation="comments_list",
     )
@@ -128,27 +162,40 @@ async def _comments_list_with_client(
 async def _comments_list_replies_with_client(
     client: CommentBusinessClient,
     *,
-    advertiser_id: str,
-    post_id: str,
+    business_id: str,
+    video_id: str,
     comment_id: str,
-    page: int,
-    page_size: int,
+    cursor: int,
+    max_count: int,
+    status: Literal["PUBLIC", "ALL"],
+    sort_field: Literal["likes", "replies", "create_time"] | None,
+    sort_order: Literal["asc", "desc"] | None,
 ) -> dict[str, object]:
+    checked_max_count = _validate_max_count(max_count)
+    checked_cursor = _validate_cursor(cursor)
+    params: dict[str, str | int] = {
+        "business_id": business_id,
+        "video_id": video_id,
+        "comment_id": comment_id,
+        "status": status,
+        "cursor": checked_cursor,
+        "max_count": checked_max_count,
+    }
+    if sort_field is not None:
+        params["sort_field"] = sort_field
+    if sort_order is not None:
+        params["sort_order"] = sort_order
+
     payload = await client.get(
         COMMENT_REPLY_LIST_PATH,
-        params={
-            "advertiser_id": advertiser_id,
-            "post_id": post_id,
-            "comment_id": comment_id,
-            "page": page,
-            "page_size": page_size,
-        },
+        params=params,
     )
     return _comments_page_from_payload(
         payload,
-        requested_page=page,
-        requested_page_size=page_size,
-        post_id=post_id,
+        requested_cursor=checked_cursor,
+        requested_max_count=checked_max_count,
+        business_id=business_id,
+        video_id=video_id,
         parent_comment_id=comment_id,
         operation="comments_list_replies",
     )
@@ -156,6 +203,12 @@ async def _comments_list_replies_with_client(
 
 def _build_comments_client(alias: str) -> CommentBusinessClientContext:
     return _CommentsClientFactory(alias)
+
+
+async def _business_id_for_alias(alias: str) -> str:
+    backend = await get_backend()
+    account = await _load_business_organic_account(backend, alias)
+    return account.tiktok_id
 
 
 class _CommentsClientFactory:
@@ -239,12 +292,34 @@ def _credentials_payload(payload: Mapping[str, object]) -> dict[str, object]:
     }
 
 
+def _validate_cursor(cursor: int) -> int:
+    if cursor < 0:
+        raise ValueError("cursor must be greater than or equal to 0")
+    return cursor
+
+
+def _validate_max_count(max_count: int) -> int:
+    if not 1 <= max_count <= 30:
+        raise ValueError("max_count must be between 1 and 30")
+    return max_count
+
+
+def _validate_comment_ids(comment_ids: list[str] | None) -> list[str]:
+    if comment_ids is None:
+        return []
+    normalized = [comment_id for comment_id in comment_ids if comment_id]
+    if len(normalized) > 30:
+        raise ValueError("comment_ids accepts at most 30 IDs")
+    return normalized
+
+
 def _comments_page_from_payload(
     payload: Mapping[str, Any],
     *,
-    requested_page: int,
-    requested_page_size: int,
-    post_id: str,
+    requested_cursor: int,
+    requested_max_count: int,
+    business_id: str,
+    video_id: str,
     parent_comment_id: str | None,
     operation: str,
 ) -> dict[str, object]:
@@ -253,12 +328,8 @@ def _comments_page_from_payload(
         _comment_from_raw(item, parent_comment_id=parent_comment_id)
         for item in _comment_items(payload)
     ]
-    page = _first_int(payload.get("page"), page_info.get("page"), default=requested_page)
-    page_size = _first_int(
-        payload.get("page_size"),
-        page_info.get("page_size"),
-        default=requested_page_size,
-    )
+    cursor = _first_int(payload.get("cursor"), page_info.get("cursor"), default=requested_cursor)
+    has_more = _first_bool(payload.get("has_more"), page_info.get("has_more"), default=False)
     total = _first_int(
         payload.get("total"),
         payload.get("total_count"),
@@ -270,16 +341,20 @@ def _comments_page_from_payload(
 
     _log_comment_page(
         operation=operation,
-        post_id=post_id,
+        video_id=video_id,
         comments=comments,
-        page=page,
-        page_size=page_size,
+        cursor=cursor,
+        max_count=requested_max_count,
         total=total,
     )
     return {
         "comments": [comment.model_dump(mode="json") for comment in comments],
-        "page": page,
-        "page_size": page_size,
+        "business_id": business_id,
+        "video_id": video_id,
+        "cursor": cursor,
+        "has_more": has_more,
+        "max_count": requested_max_count,
+        "count": len(comments),
         "total": total,
     }
 
@@ -302,7 +377,16 @@ def _comment_from_raw(raw: object, *, parent_comment_id: str | None) -> Comment:
         nested_author = _mapping_value(raw_mapping.get("user")) or {}
 
     author: dict[str, object] = {}
-    open_id = _first_string(raw_mapping.get("open_id"), nested_author.get("open_id"))
+    open_id = _first_string(
+        raw_mapping.get("open_id"),
+        nested_author.get("open_id"),
+        raw_mapping.get("user_id"),
+        nested_author.get("user_id"),
+        raw_mapping.get("unique_identifier"),
+        nested_author.get("unique_identifier"),
+        raw_mapping.get("username"),
+        nested_author.get("username"),
+    )
     if open_id is not None:
         author["open_id"] = open_id
     display_name = _first_string(
@@ -313,18 +397,36 @@ def _comment_from_raw(raw: object, *, parent_comment_id: str | None) -> Comment:
     if display_name is not None:
         author["display_name"] = display_name
     avatar_url = _first_string(raw_mapping.get("avatar_url"), nested_author.get("avatar_url"))
+    if avatar_url is None:
+        avatar_url = _first_string(
+            raw_mapping.get("profile_image"),
+            nested_author.get("profile_image"),
+        )
     if avatar_url is not None:
         author["avatar_url"] = avatar_url
+    for key in ("user_id", "unique_identifier", "username", "profile_image"):
+        value = _first_string(raw_mapping.get(key), nested_author.get(key))
+        if value is not None:
+            author[key] = value
 
     normalized: dict[str, object] = {
         "parent_comment_id": _first_string(raw_mapping.get("parent_comment_id"))
         or parent_comment_id,
         "author": author,
-        "like_count": _first_int(raw_mapping.get("like_count"), default=0),
-        "reply_count": _first_int(raw_mapping.get("reply_count"), default=0),
+        "like_count": _first_int(
+            raw_mapping.get("like_count"),
+            raw_mapping.get("likes"),
+            default=0,
+        ),
+        "reply_count": _first_int(
+            raw_mapping.get("reply_count"),
+            raw_mapping.get("replies"),
+            default=0,
+        ),
         "is_top_pinned": _first_bool(
             raw_mapping.get("is_top_pinned"),
             raw_mapping.get("is_pinned"),
+            raw_mapping.get("pinned"),
             default=False,
         ),
         "is_hidden_by_owner": _first_bool(
@@ -345,25 +447,43 @@ def _comment_from_raw(raw: object, *, parent_comment_id: str | None) -> Comment:
     text = _first_string(raw_mapping.get("text"), raw_mapping.get("comment_text"))
     if text is not None:
         normalized["text"] = text
+    if _first_string(raw_mapping.get("status")) == "HIDDEN":
+        normalized["is_hidden_by_owner"] = True
+    for key in (
+        "video_id",
+        "user_id",
+        "unique_identifier",
+        "username",
+        "display_name",
+        "profile_image",
+        "image_url",
+        "owner",
+        "liked",
+        "pinned",
+        "status",
+        "reply_list",
+    ):
+        if key in raw_mapping:
+            normalized[key] = raw_mapping[key]
     return Comment.model_validate(normalized)
 
 
 def _log_comment_page(
     *,
     operation: str,
-    post_id: str,
+    video_id: str,
     comments: list[Comment],
-    page: int,
-    page_size: int,
+    cursor: int,
+    max_count: int,
     total: int,
 ) -> None:
     comment_ids = [comment.comment_id for comment in comments]
     logger.info(
-        "%s fetched comment metadata post_id=%s page=%s page_size=%s total=%s comment_ids=%s",
+        "%s fetched comment metadata video_id=%s cursor=%s max_count=%s total=%s comment_ids=%s",
         operation,
-        post_id,
-        page,
-        page_size,
+        video_id,
+        cursor,
+        max_count,
         total,
         comment_ids,
     )

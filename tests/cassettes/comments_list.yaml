@@ -5,10 +5,10 @@ interactions:
       Access-Token:
       - REDACTED
     method: GET
-    uri: https://sandbox-ads.tiktok.com/open_api/v1.3/business/comment/list/?advertiser_id=advertiser-123&post_id=video-456&page=1&page_size=30&sort_by=newest
+    uri: https://sandbox-ads.tiktok.com/open_api/v1.3/business/comment/list/?business_id=business-open-id&video_id=video-456&status=ALL&cursor=0&max_count=30&sort_field=create_time&sort_order=desc&include_replies=true
   response:
     body:
-      string: '{"code":0,"message":"OK","request_id":"req-comments-list","data":{"comments":[{"comment_id":"comment-001","parent_comment_id":null,"author":{"open_id":"open-commenter-001","display_name":"Alex Commenter","avatar_url":"https://example.test/avatar-001.png"},"text":"[SCRUBBED]","like_count":14,"reply_count":2,"create_time":1716379200,"is_top_pinned":true,"is_hidden_by_owner":false,"is_deleted_by_author":false}],"page":1,"page_size":30,"total":1}}'
+      string: '{"code":0,"message":"OK","request_id":"req-comments-list","data":{"comments":[{"comment_id":"comment-001","video_id":"video-456","user_id":"commenter-user-001","unique_identifier":"unique-commenter-001","username":"alex_commenter","display_name":"Alex Commenter","profile_image":"https://example.test/avatar-001.png","text":"[SCRUBBED]","likes":14,"replies":2,"create_time":"1716379200","pinned":true,"liked":false,"owner":false,"status":"PUBLIC"}],"cursor":1,"has_more":false,"total":1}}'
     headers:
       Content-Type:
       - application/json

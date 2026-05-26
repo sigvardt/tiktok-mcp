@@ -18,6 +18,7 @@ from tenacity import AsyncRetrying, RetryCallState, retry_if_exception, stop_aft
 from tiktok_mcp.api.business.urls import (
     BUSINESS_API_BASE,
     BUSINESS_REFRESH_TOKEN_PATH,
+    BUSINESS_TT_USER_REFRESH_TOKEN_PATH,
     business_base_url,
 )
 from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError, install_httpx_sanitization
@@ -293,30 +294,34 @@ class BusinessAPIClient:
 
     async def _refresh_tokens(self, tokens: AccountTokens) -> None:
         refresh_token = _refresh_token_value(tokens)
+        refresh_path = self._refresh_path()
         if refresh_token is None:
             raise self._account_broken_error(
                 BusinessApiError(
                     code=-1,
                     message="Business token refresh requires a refresh token.",
-                    context={"endpoint": self.REFRESH_PATH},
+                    context={"endpoint": refresh_path},
                 )
             )
-        body = {
-            "app_id": self.app_credentials.client_id.get_secret_value(),
-            "secret": self.app_credentials.client_secret.get_secret_value(),
-            "refresh_token": refresh_token,
-        }
+        body = self._refresh_body(refresh_token)
         client = await self._http_client()
-        response = await client.post(self.REFRESH_PATH, json=body)
+        response = await client.post(refresh_path, json=body)
         payload = decode_business_response(response)
         await record_request(self.account.api_type, self.account.alias)
 
-        new_access_token = _required_string(payload, "access_token")
+        new_access_token = _required_string(payload, "access_token", endpoint=refresh_path)
         new_refresh_token = _optional_string(payload, "refresh_token") or refresh_token
 
         now = datetime.now(UTC)
-        access_expires_at = now + timedelta(seconds=_required_int(payload, "expires_in"))
-        refresh_expires_in = _optional_int(payload, "refresh_expires_in")
+        access_expires_at = now + timedelta(
+            seconds=_required_int(payload, "expires_in", endpoint=refresh_path)
+        )
+        refresh_expires_in = _optional_int(
+            payload,
+            "refresh_token_expires_in",
+            "refresh_expires_in",
+            endpoint=refresh_path,
+        )
         refresh_expires_at = (
             now + timedelta(seconds=refresh_expires_in) if refresh_expires_in is not None else None
         )
@@ -418,6 +423,25 @@ class BusinessAPIClient:
     def _auth_headers(self, tokens: AccountTokens) -> dict[str, str]:
         # Unlike Display, Business API requires Access-Token without an Authorization Bearer prefix.
         return {"Access-Token": tokens.access_token.get_secret_value()}
+
+    def _refresh_path(self) -> str:
+        if self.account.api_type is ApiType.BUSINESS_ORGANIC:
+            return BUSINESS_TT_USER_REFRESH_TOKEN_PATH
+        return self.REFRESH_PATH
+
+    def _refresh_body(self, refresh_token: str) -> dict[str, str]:
+        if self.account.api_type is ApiType.BUSINESS_ORGANIC:
+            return {
+                "client_id": self.app_credentials.client_id.get_secret_value(),
+                "client_secret": self.app_credentials.client_secret.get_secret_value(),
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            }
+        return {
+            "app_id": self.app_credentials.client_id.get_secret_value(),
+            "secret": self.app_credentials.client_secret.get_secret_value(),
+            "refresh_token": refresh_token,
+        }
 
     def _has_refresh_token(self, tokens: AccountTokens) -> bool:
         return _refresh_token_value(tokens) is not None
@@ -526,7 +550,7 @@ def _refresh_token_value(tokens: AccountTokens) -> str | None:
     return refresh_token
 
 
-def _required_string(payload: Mapping[str, Any], key: str) -> str:
+def _required_string(payload: Mapping[str, Any], key: str, *, endpoint: str) -> str:
     value = payload.get(key)
     if isinstance(value, str) and value:
         return value
@@ -534,7 +558,7 @@ def _required_string(payload: Mapping[str, Any], key: str) -> str:
     raise BusinessApiError(
         code=-1,
         message=msg,
-        context={"endpoint": BusinessAPIClient.REFRESH_PATH},
+        context={"endpoint": endpoint},
     )
 
 
@@ -545,31 +569,33 @@ def _optional_string(payload: Mapping[str, Any], key: str) -> str | None:
     return None
 
 
-def _required_int(payload: Mapping[str, Any], key: str) -> int:
+def _required_int(payload: Mapping[str, Any], key: str, *, endpoint: str) -> int:
     value = payload.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
         msg = f"Business token refresh response is missing integer field {key}."
         raise BusinessApiError(
             code=-1,
             message=msg,
-            context={"endpoint": BusinessAPIClient.REFRESH_PATH},
+            context={"endpoint": endpoint},
         )
     return value
 
 
-def _optional_int(payload: Mapping[str, Any], key: str) -> int | None:
-    value = payload.get(key)
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        msg = f"Business token refresh response field {key} must be an integer."
-        raise BusinessApiError(
-            code=-1,
-            message=msg,
-            context={"endpoint": BusinessAPIClient.REFRESH_PATH},
-        )
-    assert isinstance(value, int)
-    return value
+def _optional_int(payload: Mapping[str, Any], *keys: str, endpoint: str) -> int | None:
+    for key in keys:
+        value = payload.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, int):
+            msg = f"Business token refresh response field {key} must be an integer."
+            raise BusinessApiError(
+                code=-1,
+                message=msg,
+                context={"endpoint": endpoint},
+            )
+        assert isinstance(value, int)
+        return value
+    return None
 
 
 __all__ = ["BusinessAPIClient"]

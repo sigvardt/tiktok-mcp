@@ -103,14 +103,15 @@ Inputs for this run:
 
 Step 1. Call `comments_list` with:
 - alias = "{account_alias}"
-- post_id = "{video_id}"
-- page = 1
-- page_size = up to {max_comments} (cap at 30 per API call; paginate
-  if more are requested)
-- sort_by = "newest"
+- video_id = "{video_id}"
+- cursor = 0 on the first call
+- max_count = up to {max_comments} (cap at 30 per API call; paginate
+  with the returned cursor if more are requested)
+- sort_field = "create_time"
+- sort_order = "desc"
 
-The corresponding `advertiser_id` is required by the tool; ask the
-human for it if you do not already have it cached for this alias.
+Omit `business_id` unless the human explicitly provides an override;
+the tool uses the Organic Accounts API open_id stored for the alias.
 
 Step 2. For each comment, classify the comment_id into exactly one of:
 - SPAM

@@ -12,7 +12,12 @@ import pytest
 from pydantic import SecretStr
 
 from tiktok_mcp.api.business import BusinessAPIClient
-from tiktok_mcp.api.business.urls import BUSINESS_PROD_URL, BUSINESS_SANDBOX_URL
+from tiktok_mcp.api.business.urls import (
+    BUSINESS_PROD_URL,
+    BUSINESS_REFRESH_TOKEN_PATH,
+    BUSINESS_SANDBOX_URL,
+    BUSINESS_TT_USER_REFRESH_TOKEN_PATH,
+)
 from tiktok_mcp.auth.keychain import (
     account_key,
     deserialize_account_record,
@@ -166,7 +171,7 @@ async def test_no_refresh_token_auth_error_does_not_persist_broken() -> None:
 
 
 @pytest.mark.asyncio
-async def test_auth_error_with_refresh_token_refreshes_and_retries_once(
+async def test_business_organic_auth_error_with_refresh_token_refreshes_and_retries_once(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     backend = MemoryBackend()
@@ -178,9 +183,14 @@ async def test_auth_error_with_refresh_token_refreshes_and_retries_once(
         )
         if request.url.path == TEST_PATH and len(seen_requests) == 1:
             return _business_error(request, code=40105, message="Token expired")
-        if request.url.path == BusinessAPIClient.REFRESH_PATH:
+        if request.url.path == BUSINESS_TT_USER_REFRESH_TOKEN_PATH:
             refresh_body = cast(dict[str, object], json.loads(request.content.decode("utf-8")))
-            assert refresh_body["refresh_token"] == "refresh-token-current"
+            assert refresh_body == {
+                "client_id": "business-client-id",
+                "client_secret": "business-client-secret",
+                "grant_type": "refresh_token",
+                "refresh_token": "refresh-token-current",
+            }
             assert request.headers.get("Access-Token") is None
             return _business_response(
                 request,
@@ -188,7 +198,7 @@ async def test_auth_error_with_refresh_token_refreshes_and_retries_once(
                     "access_token": "access-token-refreshed",
                     "refresh_token": "refresh-token-refreshed",
                     "expires_in": 3600,
-                    "refresh_expires_in": 7200,
+                    "refresh_token_expires_in": 7200,
                 },
             )
         assert request.headers["Access-Token"] == "access-token-refreshed"
@@ -200,7 +210,7 @@ async def test_auth_error_with_refresh_token_refreshes_and_retries_once(
     assert result == {"advertiser_id": "adv-after-refresh"}
     assert seen_requests == [
         ("GET", TEST_PATH, "access-token-current"),
-        ("POST", BusinessAPIClient.REFRESH_PATH, None),
+        ("POST", BUSINESS_TT_USER_REFRESH_TOKEN_PATH, None),
         ("GET", TEST_PATH, "access-token-refreshed"),
     ]
     stored_account, stored_tokens = _stored_record(backend)
@@ -219,11 +229,53 @@ async def test_auth_error_with_refresh_token_refreshes_and_retries_once(
 
 
 @pytest.mark.asyncio
+async def test_marketing_auth_error_uses_advertiser_refresh_endpoint() -> None:
+    backend = MemoryBackend()
+    seen_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_paths.append(request.url.path)
+        if request.url.path == TEST_PATH and len(seen_paths) == 1:
+            return _business_error(request, code=40105, message="Token expired")
+        if request.url.path == BUSINESS_REFRESH_TOKEN_PATH:
+            refresh_body = cast(dict[str, object], json.loads(request.content.decode("utf-8")))
+            assert refresh_body == {
+                "app_id": "business-client-id",
+                "secret": "business-client-secret",
+                "refresh_token": "refresh-token-current",
+            }
+            return _business_response(
+                request,
+                {
+                    "access_token": "access-token-refreshed",
+                    "refresh_token": "refresh-token-refreshed",
+                    "expires_in": 3600,
+                    "refresh_expires_in": 7200,
+                },
+            )
+        assert request.headers["Access-Token"] == "access-token-refreshed"
+        return _business_response(request, {"advertiser_id": "adv-after-refresh"})
+
+    async with _client(
+        httpx.MockTransport(handler),
+        backend=backend,
+        api_type=ApiType.MARKETING,
+    ) as client:
+        result = await client.get(TEST_PATH)
+
+    assert result == {"advertiser_id": "adv-after-refresh"}
+    assert seen_paths == [TEST_PATH, BUSINESS_REFRESH_TOKEN_PATH, TEST_PATH]
+    stored_account, stored_tokens = _stored_record(backend, api_type=ApiType.MARKETING)
+    assert stored_account.status is AccountStatus.OK
+    assert stored_tokens.access_token.get_secret_value() == "access-token-refreshed"
+
+
+@pytest.mark.asyncio
 async def test_second_auth_error_after_refresh_marks_account_broken() -> None:
     backend = MemoryBackend()
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == BusinessAPIClient.REFRESH_PATH:
+        if request.url.path == BUSINESS_TT_USER_REFRESH_TOKEN_PATH:
             return _business_response(
                 request,
                 {
@@ -321,19 +373,25 @@ def _client(
     *,
     refresh_token: str | None = "refresh-token-current",
     backend: MemoryBackend | None = None,
+    api_type: ApiType = ApiType.BUSINESS_ORGANIC,
 ) -> BusinessAPIClient:
     return BusinessAPIClient(
-        _account(refresh_token=refresh_token),
-        _credentials(),
+        _account(refresh_token=refresh_token, api_type=api_type),
+        _credentials(api_type=api_type),
         backend=backend,
         transport=transport,
     )
 
 
-def _account(*, refresh_token: str | None, sandbox: bool = True) -> AccountWithTokens:
+def _account(
+    *,
+    refresh_token: str | None,
+    sandbox: bool = True,
+    api_type: ApiType = ApiType.BUSINESS_ORGANIC,
+) -> AccountWithTokens:
     return AccountWithTokens(
         alias="business-demo",
-        api_type=ApiType.BUSINESS_ORGANIC,
+        api_type=api_type,
         sandbox=sandbox,
         tiktok_id="business-tiktok-id",
         display_name="Business Demo",
@@ -350,9 +408,13 @@ def _account(*, refresh_token: str | None, sandbox: bool = True) -> AccountWithT
     )
 
 
-def _credentials(*, sandbox: bool = True) -> AppCredentials:
+def _credentials(
+    *,
+    sandbox: bool = True,
+    api_type: ApiType = ApiType.BUSINESS_ORGANIC,
+) -> AppCredentials:
     return AppCredentials(
-        api_type=ApiType.BUSINESS_ORGANIC,
+        api_type=api_type,
         sandbox=sandbox,
         client_id=SecretStr("business-client-id"),
         client_secret=SecretStr("business-client-secret"),
@@ -407,8 +469,12 @@ def _business_error(
     )
 
 
-def _stored_record(backend: MemoryBackend) -> tuple[AccountWithTokens, AccountTokens]:
-    key = account_key(ApiType.BUSINESS_ORGANIC, sandbox=True, alias="business-demo")
+def _stored_record(
+    backend: MemoryBackend,
+    *,
+    api_type: ApiType = ApiType.BUSINESS_ORGANIC,
+) -> tuple[AccountWithTokens, AccountTokens]:
+    key = account_key(api_type, sandbox=True, alias="business-demo")
     stored = backend.values[key]
     account, tokens = deserialize_account_record(stored)
     account_with_tokens = AccountWithTokens(

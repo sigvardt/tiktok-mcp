@@ -59,6 +59,15 @@ BUSINESS_TOKEN_PAYLOAD: dict[str, object] = {
     "advertiser_ids": ["test-advertiser-id"],
     "refresh_expires_in": 31536000,
 }
+ORGANIC_TOKEN_PAYLOAD: dict[str, object] = {
+    "access" + "_token": "synthetic-organic-access-token",
+    "refresh" + "_token": "synthetic-organic-refresh-token",
+    "expires_in": 86400,
+    "scope": "user.info.basic,video.list,comment.list,comment.list.manage",
+    "token_type": "Bearer",
+    "open_id": "organic-open-id",
+    "refresh_token_expires_in": 31536000,
+}
 
 
 class MemoryKeyring(BaseKeyringBackend):
@@ -159,6 +168,36 @@ async def test_add_account_sandbox_loads_sandbox_creds(
     params = urllib.parse.parse_qs(parsed_url.query)
     assert params["client_key"] == ["sandbox-client-id"]
     assert params["state"] == [response["state"]]
+
+
+@pytest.mark.asyncio
+async def test_add_account_business_organic_uses_tiktok_account_holder_oauth(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(
+        backend,
+        ApiType.BUSINESS_ORGANIC,
+        client_id="organic-client-id",
+    )
+
+    response = await add_account(ApiType.BUSINESS_ORGANIC, alias="nordic-comments-oauth")
+
+    assert "error" not in response
+    parsed_url = urllib.parse.urlparse(response["url"])
+    params = urllib.parse.parse_qs(parsed_url.query)
+    scopes = set(params["scope"][0].split(","))
+    assert parsed_url.scheme == "https"
+    assert parsed_url.netloc == "www.tiktok.com"
+    assert parsed_url.path == "/v2/auth/authorize/"
+    assert params["client_key"] == ["organic-client-id"]
+    assert params["response_type"] == ["code"]
+    assert params["redirect_uri"] == [REDIRECT_URI]
+    assert params["state"] == [response["state"]]
+    assert {"user.info.basic", "video.list", "comment.list", "comment.list.manage"} <= scopes
+    assert "app_id" not in params
+    assert "code_challenge" not in params
 
 
 @pytest.mark.asyncio
@@ -308,6 +347,42 @@ async def test_oauth_pkce_token_exchange_success(
 
 
 @pytest.mark.asyncio
+async def test_business_organic_token_exchange_uses_tt_user_endpoint(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.BUSINESS_ORGANIC)
+    _mock_token_exchange(
+        monkeypatch,
+        {"code": 0, "data": ORGANIC_TOKEN_PAYLOAD},
+        assert_request=_assert_business_organic_oauth_request,
+    )
+    add_response = await add_account(ApiType.BUSINESS_ORGANIC, alias="nordic-comments-token")
+    redirect = _redirect_url("synthetic-organic-code", str(add_response["state"]))
+
+    response = await complete_account_login(redirect)
+
+    assert response["alias"] == "nordic-comments-token"
+    assert response["api_type"] == "business_organic"
+    assert response["tiktok_id_fingerprint"] == "orga...len=15"
+    stored = await backend.get(
+        account_key(ApiType.BUSINESS_ORGANIC, False, "nordic-comments-token")
+    )
+    assert stored is not None
+    account, tokens = deserialize_account_record(stored)
+    assert account.tiktok_id == "organic-open-id"
+    assert account.scopes == [
+        "user.info.basic",
+        "video.list",
+        "comment.list",
+        "comment.list.manage",
+    ]
+    assert tokens.refresh_token_expires_at is not None
+
+
+@pytest.mark.asyncio
 async def test_oauth_error_envelope_surfaced(
     backend: KeyringBackend,
     allow_account_changes: None,
@@ -454,6 +529,20 @@ def _assert_business_oauth_request(request: httpx.Request) -> None:
         "app_id": "sandbox-client-id",
         "secret": "test-client-secret",
         "auth_code": "synthetic-business-code",
+    }
+
+
+def _assert_business_organic_oauth_request(request: httpx.Request) -> None:
+    assert request.url.host == "business-api.tiktok.com"
+    assert request.url.path == "/open_api/v1.3/tt_user/oauth2/token/"
+    assert request.headers["Content-Type"].startswith("application/json")
+    payload = json.loads(request.content.decode())
+    assert payload == {
+        "client_id": "test-client-id",
+        "client_secret": "test-client-secret",
+        "grant_type": "authorization_code",
+        "auth_code": "synthetic-organic-code",
+        "redirect_uri": REDIRECT_URI,
     }
 
 

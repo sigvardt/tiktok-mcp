@@ -5,10 +5,10 @@ interactions:
       Access-Token:
       - REDACTED
     method: GET
-    uri: https://sandbox-ads.tiktok.com/open_api/v1.3/business/comment/reply/list/?advertiser_id=advertiser-123&post_id=video-456&comment_id=comment-001&page=2&page_size=10
+    uri: https://sandbox-ads.tiktok.com/open_api/v1.3/business/comment/reply/list/?business_id=business-open-id&video_id=video-456&comment_id=comment-001&status=PUBLIC&cursor=2&max_count=10&sort_field=create_time&sort_order=asc
   response:
     body:
-      string: '{"code":0,"message":"OK","request_id":"req-comments-replies","data":{"comments":[{"comment_id":"reply-001","parent_comment_id":"comment-001","author":{"open_id":"open-replier-001","display_name":"Morgan Replier","avatar_url":"https://example.test/avatar-002.png"},"text":"[SCRUBBED]","like_count":4,"reply_count":0,"create_time":1716379300,"is_top_pinned":false,"is_hidden_by_owner":false,"is_deleted_by_author":false}],"page_info":{"page":2,"page_size":10,"total_number":1}}}'
+      string: '{"code":0,"message":"OK","request_id":"req-comments-replies","data":{"comments":[{"comment_id":"reply-001","parent_comment_id":"comment-001","video_id":"video-456","user_id":"replier-user-001","unique_identifier":"unique-replier-001","username":"morgan_replier","display_name":"Morgan Replier","profile_image":"https://example.test/avatar-002.png","text":"[SCRUBBED]","likes":4,"replies":0,"create_time":"1716379300","pinned":false,"liked":false,"owner":false,"status":"PUBLIC"}],"cursor":3,"has_more":false,"total":1}}'
     headers:
       Content-Type:
       - application/json

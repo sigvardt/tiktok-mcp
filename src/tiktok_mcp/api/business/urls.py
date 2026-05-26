@@ -7,6 +7,8 @@ BUSINESS_API_BASE = BUSINESS_PROD_URL
 BUSINESS_AUTH_PATH = "/portal/auth"
 BUSINESS_ACCESS_TOKEN_PATH = "/open_api/v1.3/oauth2/access_token/"
 BUSINESS_REFRESH_TOKEN_PATH = "/open_api/v1.3/oauth2/refresh_token/"
+BUSINESS_TT_USER_TOKEN_PATH = "/open_api/v1.3/tt_user/oauth2/token/"
+BUSINESS_TT_USER_REFRESH_TOKEN_PATH = "/open_api/v1.3/tt_user/oauth2/refresh_token/"
 
 
 def business_base_url(sandbox: bool) -> str:
@@ -27,6 +29,8 @@ __all__ = [
     "BUSINESS_PROD_URL",
     "BUSINESS_REFRESH_TOKEN_PATH",
     "BUSINESS_SANDBOX_URL",
+    "BUSINESS_TT_USER_REFRESH_TOKEN_PATH",
+    "BUSINESS_TT_USER_TOKEN_PATH",
     "business_base_url",
     "business_url",
 ]

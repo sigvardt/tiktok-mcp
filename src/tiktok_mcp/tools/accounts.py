@@ -21,6 +21,7 @@ from pydantic import SecretStr, ValidationError
 from tiktok_mcp.api.business.urls import (
     BUSINESS_ACCESS_TOKEN_PATH,
     BUSINESS_AUTH_PATH,
+    BUSINESS_TT_USER_TOKEN_PATH,
     business_url,
 )
 from tiktok_mcp.auth import state
@@ -83,8 +84,13 @@ ACCOUNT_KEY_RE = re.compile(
 ALIAS_RE = re.compile(r"^[a-z0-9-]{3,50}$")
 DISPLAY_SCOPES = ("user.info.basic", "video.list")
 POSTING_SCOPES = ("user.info.basic", "video.publish", "video.upload")
+ORGANIC_ACCOUNT_SCOPES = (
+    "user.info.basic",
+    "video.list",
+    "comment.list",
+    "comment.list.manage",
+)
 PKCE_APIS = frozenset({ApiType.DISPLAY, ApiType.CONTENT_POSTING})
-BUSINESS_APIS = frozenset({ApiType.MARKETING, ApiType.BUSINESS_ORGANIC})
 _PKCE_VERIFIER_CHARS = string.ascii_letters + string.digits + "-._~"
 _TIKTOK_PKCE_VERIFIER_LENGTH = 64
 _PENDING_REMOVALS: dict[str, tuple[str, datetime]] = {}
@@ -437,6 +443,17 @@ def _build_authorization_url(
             params["code_challenge_method"] = "S256"
         return f"{DISPLAY_AUTH_URL}?{urllib.parse.urlencode(params)}"
 
+    if credentials.api_type is ApiType.BUSINESS_ORGANIC:
+        organic_scopes = scopes or ORGANIC_ACCOUNT_SCOPES
+        params = {
+            "client_key": client_id,
+            "scope": ",".join(organic_scopes),
+            "response_type": "code",
+            "redirect_uri": loaded_credentials.redirect_uri,
+            "state": state_token,
+        }
+        return f"{DISPLAY_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
     params = {
         "app_id": client_id,
         "state": state_token,
@@ -474,6 +491,36 @@ async def _exchange_code_for_tokens(
         await safe_raise_for_status(response)
         payload = _json_object(response)
         _raise_for_oauth_error(payload)
+        return payload
+
+    if credentials.api_type is ApiType.BUSINESS_ORGANIC:
+        effective_redirect_uri = redirect_uri or loaded_credentials.redirect_uri
+        body = {
+            "client_id": credentials.client_id.get_secret_value(),
+            "client_secret": credentials.client_secret.get_secret_value(),
+            "grant_type": "authorization_code",
+            "auth_code": code,
+            "redirect_uri": effective_redirect_uri,
+        }
+        token_url = business_url(BUSINESS_TT_USER_TOKEN_PATH, sandbox=credentials.sandbox)
+        async with _build_http_client() as client:
+            response = await client.post(token_url, json=body)
+        await safe_raise_for_status(response)
+        payload = _json_object(response)
+        if "code" in payload and payload.get("code") != 0:
+            raise BusinessApiError(
+                code=_int_value(payload, "code"),
+                message=_string_value(
+                    payload,
+                    "message",
+                    default="TikTok account OAuth token exchange failed",
+                ),
+                request_id=_optional_string_value(payload, "request_id"),
+                context={"endpoint": urllib.parse.urlparse(token_url).path},
+            )
+        data = payload.get("data")
+        if isinstance(data, dict):
+            return {str(key): value for key, value in data.items()}
         return payload
 
     body = {
@@ -798,7 +845,11 @@ def _account_record_from_token_payload(
 ) -> tuple[Account, AccountTokens]:
     now = datetime.now(UTC)
     expires_in = _int_value(payload, "expires_in")
-    refresh_expires_in = _optional_int_value(payload, "refresh_expires_in")
+    refresh_expires_in = _first_optional_int_value(
+        payload,
+        "refresh_expires_in",
+        "refresh_token_expires_in",
+    )
     account = Account(
         alias=alias,
         api_type=api_type,
@@ -900,6 +951,14 @@ def _optional_int_value(payload: Mapping[str, object], key: str) -> int | None:
         msg = f"Token exchange response field {key} must be an integer."
         raise ValueError(msg)
     return value
+
+
+def _first_optional_int_value(payload: Mapping[str, object], *keys: str) -> int | None:
+    for key in keys:
+        value = _optional_int_value(payload, key)
+        if value is not None:
+            return value
+    return None
 
 
 def _string_value(payload: Mapping[str, object], key: str, *, default: str | None = None) -> str:
