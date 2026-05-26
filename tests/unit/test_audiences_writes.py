@@ -101,6 +101,7 @@ async def test_no_pii_in_logs(
 ) -> None:
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
+    monkeypatch.setenv("HOME", str(Path.cwd()))
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.content.lower()

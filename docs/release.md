@@ -113,7 +113,7 @@ First-time setup for trusted publishing. Do this once, before the first ever `vX
 1. Sign in to PyPI as the project owner and open the publishing page at `pypi.org/manage/account/publishing/`. Pick "Add a new pending publisher".
 2. Fill the form with the values pinned for this project:
    - PyPI project name: `tiktok-mcp`
-   - Owner: `signikant`
+   - Owner: `sigvardt`
    - Repository name: `tiktok-mcp`
    - Workflow filename: `release.yml`
    - Environment name: `pypi`

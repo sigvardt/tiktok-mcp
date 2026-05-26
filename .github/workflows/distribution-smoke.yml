@@ -2,7 +2,7 @@ name: Distribution Smoke
 
 on:
   workflow_run:
-    workflows: ["release.yml"]
+    workflows: ["release"]
     types: [completed]
   workflow_dispatch:
     inputs:

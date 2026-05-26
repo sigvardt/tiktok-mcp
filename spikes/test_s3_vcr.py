@@ -3,7 +3,6 @@ from __future__ import annotations
 # pyright: reportMissingImports=false, reportMissingTypeArgument=false, reportUnknownVariableType=false
 # pyright: reportUnknownMemberType=false, reportUntypedFunctionDecorator=false
 # pyright: reportUnknownParameterType=false, reportUnknownArgumentType=false, reportUnusedCallResult=false
-
 import json
 import os
 from pathlib import Path
@@ -23,7 +22,6 @@ from spikes.s3_vcr import (  # noqa: E402
     record_invalid_call,
     verify_cassette_no_leaks,
 )
-
 
 CASSETTE_MISSING_MESSAGE = (
     f"{DEFAULT_CASSETTE_PATH} not found; operator must record it first per spikes/s3_results.md"
@@ -49,7 +47,9 @@ def test_record(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert cassette.exists(), f"Expected vcrpy to create cassette at {DEFAULT_CASSETTE_PATH}"
     assert cassette.stat().st_size > 0, "Expected recorded cassette to be non-empty"
-    assert body.get("code") != 0, "Expected deliberately invalid Business API call to return code != 0"
+    assert body.get("code") != 0, (
+        "Expected deliberately invalid Business API call to return code != 0"
+    )
     assert verify_cassette_no_leaks(DEFAULT_CASSETTE_PATH), (
         "Cassette contains a mandatory token leak pattern; do NOT git-add it"
     )

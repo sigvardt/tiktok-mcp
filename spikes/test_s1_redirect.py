@@ -63,7 +63,10 @@ class RedirectParserTests(unittest.TestCase):
 class AuthUrlTests(unittest.TestCase):
     def test_display_auth_url_uses_pkce_s256_and_required_params(self) -> None:
         verifier = "verifier-for-test"
-        with patch("spikes.s1_redirect.secrets.token_urlsafe", side_effect=["STATE", verifier]) as token:
+        with patch(
+            "spikes.s1_redirect.secrets.token_urlsafe",
+            side_effect=["STATE", verifier],
+        ) as token:
             auth_url, state, pkce_verifier = s1_redirect.build_auth_url(
                 "display",
                 "app-id",
@@ -80,7 +83,10 @@ class AuthUrlTests(unittest.TestCase):
         self.assertEqual(token.call_args_list[1].args, (64,))
         self.assertEqual(state, "STATE")
         self.assertEqual(pkce_verifier, verifier)
-        self.assertEqual(parsed_url.geturl().split("?")[0], s1_redirect.DISPLAY_AUTH_URL.rstrip("?"))
+        self.assertEqual(
+            parsed_url.geturl().split("?")[0],
+            s1_redirect.DISPLAY_AUTH_URL.rstrip("?"),
+        )
         self.assertEqual(params["client_key"], ["app-id"])
         self.assertEqual(params["scope"], ["user.info.basic,video.upload"])
         self.assertEqual(params["response_type"], ["code"])

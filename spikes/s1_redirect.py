@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -16,7 +17,6 @@ import webbrowser
 from http.client import HTTPResponse
 from pathlib import Path
 from typing import TypeAlias, TypedDict, cast
-
 
 JsonValue: TypeAlias = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 TokenExchangeResult: TypeAlias = dict[str, JsonValue]
@@ -384,10 +384,8 @@ def _save_session(api: str, state: str, pkce_verifier: str | None) -> Path:
         "created_at": int(time.time()),
     }
     _ = session_path.write_text(json.dumps(session_data, indent=2), encoding="utf-8")
-    try:
+    with contextlib.suppress(OSError):
         session_path.chmod(0o600)
-    except OSError:
-        pass
     return session_path
 
 
@@ -433,7 +431,10 @@ def _looks_successful_exchange(payload: TokenExchangeResult) -> bool:
 
 def _contains_key(value: JsonValue, target_key: str) -> bool:
     if isinstance(value, dict):
-        return any(key == target_key or _contains_key(child, target_key) for key, child in value.items())
+        return any(
+            key == target_key or _contains_key(child, target_key)
+            for key, child in value.items()
+        )
     if isinstance(value, list):
         return any(_contains_key(child, target_key) for child in value)
     return False

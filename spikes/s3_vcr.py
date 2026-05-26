@@ -4,7 +4,6 @@ from __future__ import annotations
 # pyright: reportImplicitOverride=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
 # pyright: reportUnknownVariableType=false, reportAny=false, reportExplicitAny=false
 # pyright: reportImplicitStringConcatenation=false, reportUnusedCallResult=false
-
 import json
 import os
 import re
@@ -14,7 +13,6 @@ from typing import Any
 
 import httpx
 import vcr
-
 
 BUSINESS_API_BASE = "https://business-api.tiktok.com"
 ADVERTISER_INFO_PATH = "/open_api/v1.3/advertiser/info/"
@@ -225,4 +223,4 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

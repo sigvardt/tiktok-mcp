@@ -569,7 +569,7 @@ print('OK — 6 URL-shape variations parsed correctly')
   **What to do**:
   - Reserve the chosen PyPI package name (`tiktok-mcp` first; if 404 → `tiktok-complete-mcp`). Document availability check in `spikes/s2_results.md`.
   - Configure **TestPyPI** pending publisher (NOT production PyPI yet):
-    1. Register the package name with a pending publisher on TestPyPI under `signikant`'s account (or whichever account user designates), pointing to the GitHub repo `<owner>/tiktok-mcp`, workflow file `release.yml`, environment `pypi`.
+    1. Register the package name with a pending publisher on TestPyPI under the designated PyPI account, pointing to the GitHub repo `<owner>/tiktok-mcp`, workflow file `release.yml`, environment `pypi`.
     2. Create the GitHub repository environment `pypi` with optional protection rules (e.g. required reviewers off for spike; can tighten later).
     3. Create a throwaway `spikes/release-spike/` directory with a minimum `pyproject.toml` (`hatchling` build backend, version `0.0.0a0`, name = chosen PyPI name, single `src/tiktok_mcp/__init__.py`).
     4. Create a throwaway workflow `.github/workflows/release-spike.yml` that triggers on tag `vSPIKE-*`, builds with `uv build` (or `python -m build`), publishes to TestPyPI via `pypa/gh-action-pypi-publish@release/v1` with `repository-url: https://test.pypi.org/legacy/`.
