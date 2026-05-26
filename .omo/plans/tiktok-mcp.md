@@ -170,7 +170,7 @@ stderr only. Default INFO. `TIKTOK_MCP_LOG_LEVEL`, `TIKTOK_MCP_LOG_FILE`, `TIKTO
 - **`TIKTOK_MCP_ALLOW_WRITES`** = "can Claude mutate TikTok-side state (pause an ad, post a comment, upload a video)?"
 - **`TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES`** = "can Claude mutate the local MCP's account inventory (add account, remove account, rotate app credentials)?"
 
-A user onboarding to the MCP wants ACCOUNT_CHANGES enabled (so Claude can guide them through `add_account`) but might NOT want general ALLOW_WRITES enabled yet. Conversely, a advanced user with all accounts already added wants ALLOW_WRITES but might lock down ACCOUNT_CHANGES.
+A user onboarding to the MCP wants ACCOUNT_CHANGES enabled (so Claude can guide them through `add_account`) but might NOT want general ALLOW_WRITES enabled yet. Conversely, an advanced user with all accounts already added wants ALLOW_WRITES but might lock down ACCOUNT_CHANGES.
 
 Both gates accept the same truthy/falsy syntax as `TIKTOK_MCP_ALLOW_WRITES` (unset/empty/0/false → blocked; 1/true/yes → enabled). No per-API granularity for ACCOUNT_CHANGES (it's binary). Two-step `remove_account` confirmation (60s TTL) applies even when this gate is enabled.
 
@@ -185,7 +185,7 @@ User wants to handroll a complete Python TikTok MCP supporting full featureset f
 - **Scope expanded** mid-interview: from 3 APIs to 4 (Content Posting added) and from read-only to full read+write with destructive annotations.
 - **Auth flow constraint discovered**: TikTok requires TLD redirect URIs (no localhost), forcing manual-paste flow.
 - **Safety gating added**: env-var gate on all write tools (`TIKTOK_MCP_ALLOW_WRITES`) plus separate test-time gate (`TIKTOK_MCP_ALLOW_LIVE_WRITES`).
-- **App registrations**: user provided Display API (production + sandbox) + Business API ("TikTok MCP" prod + sandbox) credentials; runtime loading via MCP `set_app_credentials` tool into keychain.
+- **App registrations**: user provided Display API (production + sandbox) + Business API credentials; runtime loading via MCP `set_app_credentials` tool into keychain.
 
 ### Research Findings
 - Display API: 3 endpoints (user info, video list, video query); Login Kit OAuth; PKCE for desktop, optional for web; access token 24h TTL, refresh token 365d with rotation; 600 req/min rate limit; no comment endpoints on Display.
@@ -291,7 +291,7 @@ Every task MUST include agent-executed QA scenarios with concrete commands and e
 
 ```
 Wave 0 (GATING — run BEFORE anything else; project-killing risks):
-├── S1: Redirect-URL fidelity spike (manual-paste flow viability via oauth.example.com)
+├── S1: Redirect-URL fidelity spike (manual-paste flow viability via a registered redirect host)
 ├── S2: PyPI OIDC pending-publisher bootstrap (release pipeline viability)
 └── S3: vcrpy fidelity on HTTP 200 + code != 0 Business API errors
 
@@ -450,7 +450,7 @@ Full matrix populated as tasks are appended. Key dependencies:
 
   **App credentials**:
   - Display API + Business API app credentials (production + sandbox) are available locally on the user's machine — values intentionally NOT documented in this plan; the implementing agent must read them at runtime from the user-provided file/keychain and never log or echo them.
-  - Business API production app is registered with redirect_uri `https://oauth.example.com` (this is the registered HOST, not a callback service we control).
+  - Business API production app is registered with a standard HTTPS redirect URI (this is the registered HOST, not a callback service we control).
   - Business API sandbox has a pre-minted access_token for one test advertiser_id; the implementing agent must request the exact token from the user via a single MCP tool call, never paste it into a plan/draft/log.
   - Post-spike action: instruct the user to move the plaintext credentials file off Desktop into the OS keychain via the `set_app_credentials` tool, then delete the plaintext file.
 
@@ -2909,7 +2909,7 @@ print('OK — 6 URL-shape variations parsed correctly')
   - All code examples are copy-paste-valid (run `npx markdownlint README.md` in CI to catch broken syntax).
 
   **Must NOT do**:
-  - Include real app credentials, redirect URIs other than `https://oauth.example.com` placeholder, or actual account aliases.
+  - Include real app credentials, redirect URIs other than the neutral placeholder, or actual account aliases.
   - Use marketing copy or emojis (Decisions: technical docs, no emojis).
   - Document deferred features (catalog manager, audience segments, etc.) — point to "Roadmap" section instead.
 

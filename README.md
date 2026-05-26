@@ -1,60 +1,66 @@
-![CI](https://github.com/signikant/tiktok-mcp/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/sigvardt/tiktok-mcp/actions/workflows/ci.yml/badge.svg)
 <!-- markdownlint-disable MD013 MD034 -->
 
 # tiktok-mcp
 
-TikTok MCP: read your TikTok organic and ad performance, comments, and post content. Multi-account, multi-API, uvx-distributed.
+`tiktok-mcp` is a local Model Context Protocol server for working with TikTok
+Display, Marketing, Business Organic, and Content Posting APIs from Claude
+Desktop or another MCP client.
 
-`tiktok-mcp` is a Model Context Protocol server that lets Claude Desktop (or any MCP client) talk to four TikTok surfaces from one process:
+The server runs on your machine, stores OAuth tokens in your OS keychain, and has
+no hosted relay or telemetry. It supports multi-account use across production and
+sandbox namespaces, with write tools blocked unless you explicitly opt in.
 
-- **Display API**: user info, video list, post insights
-- **Marketing API**: campaigns, ad groups, ads, reports, audiences, creatives
-- **Business Organic API**: comments on your own videos plus reply moderation
-- **Content Posting API**: video and photo uploads (drafts by default)
+## What It Supports
 
-It ships 40+ MCP tools, 2 MCP resources (`tiktok-mcp://accounts/`, `tiktok-mcp://app-credentials/`), and 3 prompt templates (`weekly_marketing_report`, `comment_queue_triage`, `weekly_engagement_summary`). Tokens stay in your OS keychain. No hosted relay, no cloud, no telemetry.
-
-## Quick start
-
-1. Smoke-test the package without installing anything:
-
-   ```bash
-   uvx tiktok-mcp@0.1.0 --version
-   ```
-
-2. Add the `claude_desktop_config.json` snippet for your operating system (see [claude_desktop_config.json examples](#claude_desktop_configjson-examples) below).
-
-3. Restart Claude Desktop and ask it to list available `tiktok-mcp` tools to confirm the server booted.
-
-## Supported APIs
-
-| API | Surface | Read / Write / Both |
+| Surface | Main Use | Current Tooling |
 | --- | --- | --- |
-| Display | user info, video list, post insights | Both (revoke is the only write today) |
-| Marketing | campaigns, ad groups, ads, reports, audience uploads, creative uploads | Both |
-| Business Organic | own-video comments and reply moderation | Both |
-| Content Posting | video and photo upload, draft inbox, publish status | Both (drafts default; direct posting is opt-in) |
+| Display API | User info, video list, video metrics | Read tools plus token revoke/refresh utilities |
+| Marketing API | Advertisers, campaigns, ad groups, ads, reports, creatives, audiences | Read tools and gated write tools |
+| Business Organic Accounts API | Comments on owned videos and comment moderation | Read tools and gated moderation writes |
+| Content Posting API | Video/photo upload, drafts, publish status | Draft-first upload tooling and gated posting writes |
 
-> Direct publishing is off by default. Content Posting tools land assets in your TikTok draft inbox unless you pass `publish_immediately=True` explicitly on the relevant upload tool. The mobile app stays the publish UI for the default flow.
+MCP resources:
 
-## claude_desktop_config.json examples
+- `tiktok-mcp://accounts/`
+- `tiktok-mcp://app-credentials/`
 
-The Claude Desktop config file lives at:
+Prompt templates:
+
+- `weekly_marketing_report`
+- `comment_queue_triage`
+- `weekly_engagement_summary`
+
+## Install
+
+Smoke-test the package:
+
+```bash
+uvx tiktok-mcp --version
+```
+
+For local development from this repository:
+
+```bash
+uv run tiktok-mcp --version
+```
+
+## Claude Desktop
+
+Claude Desktop config locations:
 
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 - Linux: `~/.config/Claude/claude_desktop_config.json`
 
-Each example below pins the same version (`tiktok-mcp@0.1.0`), sets a conservative writes posture (account-change tools enabled so first-time onboarding works, no general TikTok-side writes yet), and turns on structured stderr logging. Copy the block matching your operating system into the config file above.
-
-### macOS
+Minimal read-first config:
 
 ```json
 {
   "mcpServers": {
     "tiktok-mcp": {
       "command": "uvx",
-      "args": ["tiktok-mcp@0.1.0"],
+      "args": ["tiktok-mcp"],
       "env": {
         "TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES": "1",
         "TIKTOK_MCP_ALLOW_WRITES": "",
@@ -66,253 +72,217 @@ Each example below pins the same version (`tiktok-mcp@0.1.0`), sets a conservati
 }
 ```
 
-### Windows
+Restart Claude Desktop after changing this file.
 
-```json
-{
-  "mcpServers": {
-    "tiktok-mcp": {
-      "command": "uvx",
-      "args": ["tiktok-mcp@0.1.0"],
-      "env": {
-        "TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES": "1",
-        "TIKTOK_MCP_ALLOW_WRITES": "",
-        "TIKTOK_MCP_LOG_LEVEL": "INFO",
-        "TIKTOK_MCP_LOG_FORMAT": "json"
-      }
-    }
-  }
-}
-```
+## First-Time Setup
 
-### Linux
+Setup is done through MCP tools. You do not need to hand-edit token files.
 
-```json
-{
-  "mcpServers": {
-    "tiktok-mcp": {
-      "command": "uvx",
-      "args": ["tiktok-mcp@0.1.0"],
-      "env": {
-        "TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES": "1",
-        "TIKTOK_MCP_ALLOW_WRITES": "",
-        "TIKTOK_MCP_LOG_LEVEL": "INFO",
-        "TIKTOK_MCP_LOG_FORMAT": "json"
-      }
-    }
-  }
-}
-```
+1. Ask Claude to set app credentials for the API surface you want, for example:
+   `set_app_credentials(api_type="business_organic", client_id=..., client_secret=..., redirect_uri=...)`.
 
-If `uvx` is not on your `PATH`, install it with `pipx install uv` (or follow the [uv installation docs](https://docs.astral.sh/uv/getting-started/installation/)) and re-run the smoke command. As an alternative, replace `"command": "uvx"` with the absolute path to `uvx` (output of `which uvx` on macOS/Linux or `where uvx` on Windows). The `tiktok-mcp` console script is also installed when you `uv pip install tiktok-mcp`, but the `uvx` form keeps the install ephemeral and pinned.
+2. Ask Claude to add an account:
+   `add_account(api_type="business_organic", alias="comments-live")`.
 
-## First-time setup walkthrough
+3. Open the returned authorization URL, approve TikTok access, and copy the full
+   redirected URL from the browser address bar.
 
-Claude drives onboarding through MCP tool calls. You do not edit any files by hand after the config snippet above.
+4. Paste that full redirect URL back to Claude. Claude calls
+   `complete_account_login(...)`, validates the OAuth state, exchanges the code,
+   and stores the resulting account tokens in keychain.
 
-1. Restart Claude Desktop so it picks up the new `tiktok-mcp` server entry.
+5. Turn account changes off after setup by unsetting
+   `TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES` or setting it to `0`.
 
-2. Tell Claude: "Set my TikTok Marketing API app credentials." Claude will call the `set_app_credentials` tool with the `client_id`, `client_secret`, and registered `redirect_uri` you supply. Use the same `redirect_uri` you registered on the TikTok developer console; the placeholder used throughout these examples is `https://oauth.example.com`.
+Account aliases are local names. Tokens and app secrets are never returned by
+normal listing tools; account IDs are exposed only as fingerprints where possible.
 
-3. Tell Claude: "Add a Marketing account aliased `demo-marketing`." Claude will call `add_account(api_type="marketing", alias_hint="demo-marketing")`. The tool returns an authorization URL plus a short-lived `state` token (10-minute TTL).
+## OAuth Notes
 
-4. Open the authorization URL in any browser, sign in to TikTok, and approve the requested scopes. TikTok redirects your browser to your registered URI, for example `https://oauth.example.com?code=...&state=...`.
+Each TikTok surface has its own OAuth details:
 
-5. Copy the full redirect URL out of the address bar and paste it back to Claude. Claude calls `complete_account_login(redirect_url=...)`, which validates the state, swaps the code for tokens, and writes them atomically to your OS keychain.
-
-6. Repeat for any other API surface (Display, Business Organic, Content Posting) by passing the matching `api_type` value.
-
-Tokens never leave your machine. The MCP server has no hosted component; the redirect target is a static `https://` URL you control on the TikTok developer console.
-
-## Writes opt-in
-
-`tiktok-mcp` ships with writes off. Every mutation tool is annotated with `destructiveHint: true` (so Claude Desktop prompts per call) and decorated with `@require_writes_enabled("<api>")`, which checks `TIKTOK_MCP_ALLOW_WRITES` at every invocation. Toggling the env var mid-session therefore takes effect on the next call without a restart.
-
-`TIKTOK_MCP_ALLOW_WRITES` accepts:
-
-| Value | Behaviour |
-| --- | --- |
-| (unset), `""`, `"0"`, `"false"`, `"no"` | All writes blocked |
-| `"1"`, `"true"`, `"yes"`, `"all"` | All writes enabled |
-| `"marketing"` | Only Marketing API writes |
-| `"comments"` | Only Business Organic comment moderation writes |
-| `"display"` | Only Display API writes |
-| `"posting"` | Only Content Posting writes |
-| `"marketing,comments"` (any comma-separated subset of `marketing,comments,display,posting`) | Enables the listed surfaces only |
-
-Account add/remove/rename and app-credential management are gated separately by `TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES` (binary: unset, `0`, `false`, or `no` blocks; `1`, `true`, or `yes` enables). You typically want this on during onboarding and off afterwards.
-
-When a write is blocked, the tool returns a structured error envelope instead of failing silently:
-
-```json
-{
-  "error": "writes_disabled",
-  "message": "Write/delete tools for 'marketing' are disabled. Set TIKTOK_MCP_ALLOW_WRITES=all (or include 'marketing') to enable.",
-  "tool": "marketing_update_campaign_status",
-  "api": "marketing",
-  "would_have_done": "Pause campaign 1700000000000000001 on account demo-marketing"
-}
-```
-
-`TIKTOK_MCP_ALLOW_LIVE_WRITES` is a separate test-only gate. CI never sets it, and you do not need to set it for normal use; it only opts a local `pytest` run into hitting TikTok's live write endpoints. Tests tagged `@pytest.mark.live_write` are auto-skipped without it.
-
-## Sandbox
-
-TikTok exposes a sandbox tenant for Marketing API testing. To route every keychain entry, OAuth flow, and HTTP call through sandbox semantics, set `TIKTOK_MCP_USE_SANDBOX=1` in the server's env block:
-
-```json
-{
-  "mcpServers": {
-    "tiktok-mcp-sandbox": {
-      "command": "uvx",
-      "args": ["tiktok-mcp@0.1.0"],
-      "env": {
-        "TIKTOK_MCP_USE_SANDBOX": "1",
-        "TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES": "1",
-        "TIKTOK_MCP_ALLOW_WRITES": "all",
-        "TIKTOK_MCP_LOG_LEVEL": "DEBUG"
-      }
-    }
-  }
-}
-```
-
-Sandbox accounts live in a separate keychain namespace (`tiktok-mcp::<api>::sandbox::<alias>`) from production accounts (`tiktok-mcp::<api>::production::<alias>`). The two namespaces are mutually exclusive: a sandbox token cannot be used by a production tool call, and vice versa. This stops accidental cross-tenant calls in mixed environments.
-
-The recommended workflow is to keep `tiktok-mcp` and `tiktok-mcp-sandbox` as side-by-side entries in `claude_desktop_config.json` so production and sandbox servers run together without colliding.
-
-## Security
-
-### Token storage
-
-Tokens are written to the OS keychain via the [`keyring`](https://pypi.org/project/keyring/) library:
-
-- macOS: Keychain (login keychain by default)
-- Windows: Credential Manager
-- Linux: Secret Service (GNOME Keyring, KWallet, or any libsecret backend)
-
-When no keychain backend is available (a headless Linux container without a running Secret Service, for example), `tiktok-mcp` falls back to an AES-encrypted JSON file under `platformdirs.user_data_dir("tiktok-mcp")`:
-
-- macOS: `~/Library/Application Support/tiktok-mcp/`
-- Windows: `%LOCALAPPDATA%\tiktok-mcp\`
-- Linux: `~/.local/share/tiktok-mcp/`
-
-Encryption uses `cryptography.fernet` (AES-128-CBC + HMAC-SHA-256). The fernet key itself is stored in keychain whenever a keychain backend is reachable. Plain unencrypted token files are never an acceptable fallback.
-
-### Refresh-token rotation
-
-Refresh-token rotation is atomic. The new refresh token is written to keychain before the old one is discarded, under a per-account `asyncio.Lock` so concurrent expired-token requests deduplicate to a single refresh round-trip. If the keychain write fails, the old tokens are retained in memory and the call raises instead of silently dropping the only working refresh token.
-
-### Redaction
-
-A `SecretRedactor` logging filter is installed on the root logger and cannot be disabled. It rewrites any `access_token=`, `refresh_token=`, `code=`, `client_secret=`, or `Authorization:` value to `<REDACTED:token_name>`. Every token read out of keychain is added to a runtime redaction set, so even custom log lines you write through the standard `logging` package stay redacted. `httpx` exceptions are wrapped to strip response bodies before bubbling up.
-
-Comment text is never persisted, never cached, and never logged at INFO. Dumping bodies for debugging requires both `TIKTOK_MCP_LOG_LEVEL=DEBUG` and `TIKTOK_MCP_LOG_COMMENT_BODIES=1`; either one on its own keeps comment bodies out of logs.
-
-### Logging knobs
-
-| Env var | Default | Effect |
+| API Type | Authorization Flow | Token Endpoint |
 | --- | --- | --- |
-| `TIKTOK_MCP_LOG_LEVEL` | `INFO` | Sets the level on the root logger |
-| `TIKTOK_MCP_LOG_FILE` | unset (stderr only) | Mirrors stderr output to this file path |
-| `TIKTOK_MCP_LOG_FORMAT` | text | Use `json` for one-line-per-record structured logs |
-| `TIKTOK_MCP_LOG_COMMENT_BODIES` | unset | `1` plus DEBUG level required to dump comment bodies |
+| `display` | TikTok v2 account OAuth with PKCE | `https://open.tiktokapis.com/v2/oauth/token/` |
+| `content_posting` | TikTok v2 account OAuth with PKCE | `https://open.tiktokapis.com/v2/oauth/token/` |
+| `marketing` | TikTok For Business advertiser authorization | `/open_api/v1.3/oauth2/access_token/` |
+| `business_organic` | TikTok account-holder authorization | `/open_api/v1.3/tt_user/oauth2/token/` |
 
-## Troubleshooting
+Business Organic comment reads require the TikTok account-holder flow, not the
+Marketing advertiser flow. The default requested scopes are:
 
-### Keyring backend not available on Linux
+- `user.info.basic`
+- `video.list`
+- `comment.list`
+- `comment.list.manage`
 
-Symptom: `tiktok-mcp` boots but tools complain that no keyring backend is available and the encrypted-file fallback kicks in (the path appears in stderr at startup).
+The stored Organic account ID is the `open_id` returned by the `/tt_user` token
+flow. Comment read tools use that ID as `business_id` automatically.
 
-Fix: install a Secret Service implementation and unlock it once.
+## Comment Reads
+
+Business Organic read tools are read-only MCP tools:
+
+- `comments_list(alias, video_id, business_id=None, cursor=0, max_count=20, ...)`
+- `comments_list_replies(alias, video_id, comment_id, business_id=None, cursor=0, max_count=20, ...)`
+
+`business_id` is optional for normal use. If omitted, the tool uses the stored
+Organic account ID for the alias.
+
+Typical flow:
+
+1. Use a known owned TikTok `video_id`, or discover one with the Accounts API
+   video list endpoint.
+2. Call `comments_list(...)` to fetch comments on the owned video.
+3. Pick a top-level `comment_id`.
+4. Call `comments_list_replies(...)` to fetch replies for that comment.
+
+For local E2E verification, this repo includes a read-only smoke runner:
 
 ```bash
-sudo apt install gnome-keyring libsecret-tools
-gnome-keyring-daemon --unlock
+TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES=1 \
+  uv run python spikes/live_comments_read_e2e.py --alias comments-live-e2e --oauth
 ```
 
-If you cannot install one (for example on a restricted CI host), the encrypted JSON file at `~/.local/share/tiktok-mcp/` is a supported fallback. Keep that directory backed up and on an encrypted disk.
+The runner performs OAuth, discovers an owned video through read-only
+`GET /business/video/list/`, then calls:
 
-### `state mismatch` or `state expired` on `complete_account_login`
+- `GET /business/comment/list/`
+- `GET /business/comment/reply/list/`
 
-Symptom: pasting the redirect URL produces an error envelope containing `"error": "state_mismatch"` or `"error": "state_expired"`.
+It prints counts and ID fingerprints only. It does not print comment bodies or
+OAuth tokens.
 
-Cause: OAuth state lives in memory only with a 10-minute TTL. Either the MCP server restarted between `add_account` and `complete_account_login`, or you waited too long to paste back.
+## Write Safety
 
-Fix: re-run `add_account` to get a fresh URL and finish the paste within 10 minutes.
+There are two gates for TikTok-side writes.
 
-```text
-"Add a Marketing account aliased demo-marketing."
-```
+`TIKTOK_MCP_ALLOW_WRITES` controls which write namespaces may run:
 
-### `redirect host mismatch` on `complete_account_login`
+| Value | Effect |
+| --- | --- |
+| unset, `""`, `0`, `false`, `no` | Block all writes |
+| `marketing` | Enable Marketing writes |
+| `comments` | Enable Business Organic moderation writes |
+| `posting` | Enable Content Posting writes |
+| `display` | Enable Display token write utilities |
+| `all`, `1`, `true`, `yes` | Enable every write namespace |
+| comma-separated list | Enable only those namespaces |
 
-Symptom: the error envelope contains `"error": "redirect_host_mismatch"`.
-
-Cause: the redirect URL you pasted does not match the `redirect_uri` you registered on the TikTok developer console. The host check is exact; subdomains and trailing slashes count.
-
-Fix: confirm the registered URI (the examples use `https://oauth.example.com`) and re-call `set_app_credentials` with the correct value, then start a fresh `add_account` flow.
-
-```text
-"Update my Marketing API app credentials. The redirect URI is https://oauth.example.com."
-```
-
-### `writes_disabled` when calling a write tool
-
-Symptom: a mutation tool returns the `writes_disabled` envelope documented above.
-
-Fix: widen `TIKTOK_MCP_ALLOW_WRITES` to include the API surface you need, then restart Claude Desktop (or just re-issue the tool call; the gate is re-checked per invocation). For example, to enable Marketing and Comments writes:
+`TIKTOK_MCP_LIVE_ACCOUNT_SAFETY` is an additional live-account lock. When unset,
+it locks all destructive live API surfaces even if `TIKTOK_MCP_ALLOW_WRITES` is
+set. To intentionally unlock writes for a live session, set it explicitly:
 
 ```json
 {
   "env": {
-    "TIKTOK_MCP_ALLOW_WRITES": "marketing,comments"
+    "TIKTOK_MCP_ALLOW_WRITES": "comments",
+    "TIKTOK_MCP_LIVE_ACCOUNT_SAFETY": ""
   }
 }
 ```
 
-The error envelope's `would_have_done` field describes the blocked operation in plain English, so you can decide whether to widen the gate or stick with the read-only equivalent.
+Keep both unset or empty for read-only use.
 
-### `tiktok-mcp` tools not appearing in Claude Desktop
+Account inventory changes are separate. `set_app_credentials`, `add_account`,
+`complete_account_login`, `rename_account`, and `remove_account` are gated by
+`TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES`, not by `TIKTOK_MCP_ALLOW_WRITES`.
 
-Symptom: Claude Desktop has restarted but the `tiktok-mcp` tools list is empty.
+## Sandbox
 
-Fix: confirm the server is actually launching.
+TikTok’s sandbox support is primarily useful for Marketing API testing. Sandbox
+accounts are stored separately from production accounts:
+
+- production: `tiktok-mcp::<api>::production::<alias>`
+- sandbox: `tiktok-mcp::<api>::sandbox::<alias>`
+
+Pass `sandbox=true` when adding or using sandbox accounts. A sandbox token is not
+used for production calls, and a production token is not used for sandbox calls.
+
+## Token Storage And Logging
+
+Tokens are stored through the Python `keyring` library:
+
+- macOS: Keychain
+- Windows: Credential Manager
+- Linux: Secret Service
+
+If keyring is unavailable, the server falls back to an encrypted file under the
+platform user-data directory. Plain token files are not used.
+
+Logging protections:
+
+- Access tokens, refresh tokens, auth codes, client secrets, and authorization
+  headers are redacted.
+- Comment bodies are not logged at INFO.
+- Raw comment-body logging requires both `TIKTOK_MCP_LOG_LEVEL=DEBUG` and
+  `TIKTOK_MCP_LOG_COMMENT_BODIES=1`.
+
+Useful logging env vars:
+
+| Env Var | Default | Effect |
+| --- | --- | --- |
+| `TIKTOK_MCP_LOG_LEVEL` | `INFO` | Root log level |
+| `TIKTOK_MCP_LOG_FORMAT` | text | Use `json` for structured one-line logs |
+| `TIKTOK_MCP_LOG_FILE` | unset | Mirror logs to a file |
+| `TIKTOK_MCP_LOG_COMMENT_BODIES` | unset | Opt in to DEBUG comment-body logging |
+
+## Development
+
+Install dependencies and run the focused checks:
 
 ```bash
-uvx tiktok-mcp@0.1.0 --version
+uv run --extra test pytest
+uv run --extra dev ruff check .
+uv run --extra dev mypy src/tiktok_mcp
 ```
 
-If that prints a version, check the Claude Desktop MCP log on your platform (macOS: `~/Library/Logs/Claude/`, Windows: `%APPDATA%\Claude\logs\`, Linux: `~/.config/Claude/logs/`). The most common cause is a syntax error in `claude_desktop_config.json`; an unescaped backslash in the Windows redirect path is the usual culprit. Validate the JSON locally:
+Validate README JSON blocks:
 
 ```bash
-python -m json.tool < claude_desktop_config.json
+uv run python tests/docs/validate_readme_json.py
 ```
 
-## Roadmap
+Default tests use mocked transports or scrubbed replay cassettes. Do not run live
+write tests against a production account unless you intentionally configured both
+write gates and understand the operation.
 
-These surfaces are intentionally out of scope for v0.1 and tracked for v0.2:
+## Troubleshooting
 
-- Marketing Catalog Manager and Dynamic Product Ads
-- Custom Audience segments and lookalike modelling
-- Reservation buying (v0.1 is auction only)
-- Pixel and Events API
-- Business Organic comment search across other creators
-- Interactive Content Posting features (slideshows, polls, interactive add-ons)
-- Long-term analytics storage and a web UI
+### Account tools return `account_changes_disabled`
 
-Track progress on the [GitHub issues page](https://github.com/signikant/tiktok-mcp/issues).
+Set `TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES=1`, restart the MCP server, and retry the
+setup action. Turn it off again after onboarding.
+
+### OAuth state expired or invalid
+
+OAuth state is in memory and valid for about 10 minutes. Start a fresh
+`add_account` flow and paste the redirected URL back before the state expires.
+
+### Comment reads return account-not-found
+
+Confirm you added a `business_organic` account, not a Marketing account. Comment
+reads require the TikTok account-holder OAuth flow and the stored Organic
+`open_id`.
+
+### Comment video discovery returns empty pages
+
+The Accounts API can return sparse video-list pages. Paginate by passing the
+returned cursor while `has_more=true`, or provide a known owned `video_id`
+directly to `comments_list`.
+
+### A write tool returns `live_account_safety_locked`
+
+`TIKTOK_MCP_LIVE_ACCOUNT_SAFETY` is still locking that namespace. Leave it locked
+for read-only work. Unlock only the specific session where you intend to mutate
+TikTok state.
 
 ## License
 
-MIT. See [LICENSE](LICENSE) for the full text.
+MIT. See [LICENSE](LICENSE).
 
 ## Contributing
 
-Bug reports, reproductions, and pull requests are welcome at [github.com/signikant/tiktok-mcp](https://github.com/signikant/tiktok-mcp). A few ground rules:
-
-1. Open an issue first for anything beyond a documentation typo so we can agree on shape before code lands.
-2. Run `uv run pytest -q` locally and confirm green before pushing. The integration suite uses `vcrpy` replay only by default, so it should pass without TikTok credentials.
-3. Keep cassettes scrubbed. The project's `vcrpy` config strips `Authorization`, `Access-Token`, `client_secret`, and any `text` or `comment_text` body field, but a manual `grep -r "Bearer " tests/cassettes/` before commit is the easy backstop.
-
-For questions or commercial support, contact `[email protected]`.
+Bug reports and pull requests are welcome. Keep test cassettes scrubbed, avoid
+committing live IDs or OAuth redirects, and run the development checks before
+pushing.

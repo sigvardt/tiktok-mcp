@@ -54,7 +54,7 @@ The `@require_writes_enabled("<api>")` decorator wraps every write tool. At ever
 
 ### Layer 7: Per-API granularity of TIKTOK_MCP_ALLOW_WRITES
 
-`TIKTOK_MCP_ALLOW_WRITES` accepts comma-separated tokens: `marketing`, `comments`, `posting`, `display`, or `all`. A advanced user can enable comment moderation while keeping ad-campaign mutations blocked with `TIKTOK_MCP_ALLOW_WRITES=comments`. Unknown tokens are logged at WARNING and ignored, so a typo such as `TIKTOK_MCP_ALLOW_WRITES=marekting` fails closed: nothing enables, the warning surfaces in stderr, and the operator sees that the intended namespace is still blocked.
+`TIKTOK_MCP_ALLOW_WRITES` accepts comma-separated tokens: `marketing`, `comments`, `posting`, `display`, or `all`. An advanced user can enable comment moderation while keeping ad-campaign mutations blocked with `TIKTOK_MCP_ALLOW_WRITES=comments`. Unknown tokens are logged at WARNING and ignored, so a typo such as `TIKTOK_MCP_ALLOW_WRITES=marekting` fails closed: nothing enables, the warning surfaces in stderr, and the operator sees that the intended namespace is still blocked.
 
 ### Layer 8: TIKTOK_MCP_ALLOW_LIVE_WRITES test-time gate
 
