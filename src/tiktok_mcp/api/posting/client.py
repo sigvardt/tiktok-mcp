@@ -441,9 +441,8 @@ def _tokens_from_refresh_payload(
 ) -> AccountTokens:
     now = datetime.now(UTC)
     access_token = _string_value(payload, "access_token")
-    refresh_token = (
-        _optional_string_value(payload, "refresh_token")
-        or _refresh_token_value(previous_tokens)
+    refresh_token = _optional_string_value(payload, "refresh_token") or _refresh_token_value(
+        previous_tokens
     )
     if refresh_token is None:
         raise SanitizedHttpxError(status=200, url_path=OAUTH_TOKEN_PATH)

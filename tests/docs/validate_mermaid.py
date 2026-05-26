@@ -126,9 +126,7 @@ def structural_check(block: str, index: int) -> list[str]:
                 continue
             lhs = line.split(":", 1)[0]
             if not SEQUENCE_ARROW_PATTERN.search(lhs):
-                errors.append(
-                    f"block #{index}: line {lineno} missing valid arrow: {line!r}"
-                )
+                errors.append(f"block #{index}: line {lineno} missing valid arrow: {line!r}")
     return errors
 
 
@@ -154,27 +152,41 @@ def render_with_mmdc(block: str, index: int, tmp_dir: Path) -> list[str]:
     return errors
 
 
+def _markdown_paths(raw_paths: list[str]) -> list[Path]:
+    markdown_paths: list[Path] = []
+    for raw_path in raw_paths:
+        path = Path(raw_path)
+        if not path.exists():
+            raise FileNotFoundError(str(path))
+        if path.is_dir():
+            markdown_paths.extend(sorted(path.rglob("*.md")))
+        else:
+            markdown_paths.append(path)
+    return markdown_paths
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: validate_mermaid.py <markdown-file>", file=sys.stderr)
+    if len(argv) < 2:
+        print("usage: validate_mermaid.py <markdown-file-or-dir> [...]", file=sys.stderr)
         return 2
 
-    path = Path(argv[1])
-    if not path.exists():
-        print(f"file not found: {path}", file=sys.stderr)
+    try:
+        markdown_paths = _markdown_paths(argv[1:])
+    except FileNotFoundError as exc:
+        print(f"file not found: {exc}", file=sys.stderr)
         return 2
 
-    markdown = path.read_text(encoding="utf-8")
-    blocks = extract_blocks(markdown)
+    blocks: list[str] = []
+    for path in markdown_paths:
+        blocks.extend(extract_blocks(path.read_text(encoding="utf-8")))
     if not blocks:
-        print(f"no mermaid blocks found in {path}", file=sys.stderr)
+        print("no mermaid blocks found", file=sys.stderr)
         return 1
 
     has_mmdc = shutil.which("mmdc") is not None
     if not has_mmdc:
         print(
-            "info: mermaid-cli (mmdc) not on PATH; "
-            "running structural checks only",
+            "info: mermaid-cli (mmdc) not on PATH; running structural checks only",
             file=sys.stderr,
         )
 

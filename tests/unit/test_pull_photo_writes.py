@@ -216,7 +216,7 @@ async def test_get_publish_status_returns_unknown_publish_id_envelope_on_status_
             status=400,
             url_path=POST_STATUS_PATH,
             request_id="req-400",
-        )
+        ),
     )
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
@@ -255,7 +255,7 @@ async def test_get_publish_status_raises_non_400_status_errors(
             status=500,
             url_path=POST_STATUS_PATH,
             request_id="req-500",
-        )
+        ),
     )
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")

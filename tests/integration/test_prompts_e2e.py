@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-import selectors
+import queue
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -30,22 +31,27 @@ def _send(proc: subprocess.Popen[bytes], payload: dict[str, Any]) -> None:
     proc.stdin.flush()
 
 
-def _readline_with_deadline(
-    proc: subprocess.Popen[bytes], deadline: float
-) -> bytes:
+def _readline_with_deadline(proc: subprocess.Popen[bytes], deadline: float) -> bytes:
     assert proc.stdout is not None
-    selector = selectors.DefaultSelector()
-    selector.register(proc.stdout, selectors.EVENT_READ)
+    result: queue.Queue[bytes | BaseException] = queue.Queue(maxsize=1)
+
+    def read_line() -> None:
+        try:
+            result.put(proc.stdout.readline())
+        except BaseException as exc:
+            result.put(exc)
+
+    threading.Thread(target=read_line, daemon=True).start()
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("MCP server response timed out")
     try:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError("MCP server response timed out")
-        ready = selector.select(timeout=remaining)
-        if not ready:
-            raise TimeoutError("MCP server response timed out")
-    finally:
-        selector.close()
-    return proc.stdout.readline()
+        item = result.get(timeout=remaining)
+    except queue.Empty as exc:
+        raise TimeoutError("MCP server response timed out") from exc
+    if isinstance(item, BaseException):
+        raise item
+    return item
 
 
 def _read_response(proc: subprocess.Popen[bytes], request_id: int) -> dict[str, Any]:
@@ -160,9 +166,7 @@ def test_prompts_get_weekly_marketing_report_renders_inputs(
     messages = response["result"].get("messages")
     assert isinstance(messages, list) and messages
     rendered = "\n".join(
-        msg.get("content", {}).get("text", "")
-        for msg in messages
-        if isinstance(msg, dict)
+        msg.get("content", {}).get("text", "") for msg in messages if isinstance(msg, dict)
     )
     assert "no-marketing-e2e" in rendered
     assert "2026-04-01" in rendered
@@ -195,9 +199,7 @@ def test_prompts_get_comment_triage_surfaces_writes_gate(
     messages = response["result"].get("messages")
     assert isinstance(messages, list) and messages
     rendered = "\n".join(
-        msg.get("content", {}).get("text", "")
-        for msg in messages
-        if isinstance(msg, dict)
+        msg.get("content", {}).get("text", "") for msg in messages if isinstance(msg, dict)
     )
     assert "TIKTOK_MCP_ALLOW_WRITES" in rendered
     assert "comments_list" in rendered

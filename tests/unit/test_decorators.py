@@ -47,6 +47,8 @@ TRUTH_TABLE_CASES: tuple[tuple[str | None, set[str]], ...] = (
     ("all,foo", ALL_APIS),
     ("posting,display,unknown,marketing", {"posting", "display", "marketing"}),
 )
+
+
 class _DecoratedWriteTool(Protocol):
     __tiktok_mcp_destructive__: bool
     __tiktok_mcp_write_api__: str
@@ -264,8 +266,7 @@ def test_assert_tool_decoration_compliance_catches_missing_decorator(
     violations = assert_tool_decoration_compliance(module_name)
 
     assert any(
-        "create_bad" in violation and "destructiveHint" in violation
-        for violation in violations
+        "create_bad" in violation and "destructiveHint" in violation for violation in violations
     )
 
 

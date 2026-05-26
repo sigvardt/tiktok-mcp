@@ -286,6 +286,7 @@ async def delete_campaign(
     _log_success("campaign.delete", params.advertiser_id, result, payload)
     return result
 
+
 async def _post_campaign_write(alias: str, path: str, body: JsonObject) -> JsonObject:
     async with await _build_business_client(alias) as client:
         payload = await client.request("POST", path, json=body)

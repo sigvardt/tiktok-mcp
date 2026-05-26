@@ -101,9 +101,7 @@ async def test_60s_window_pruning() -> None:
 @pytest.mark.asyncio
 async def test_concurrent_record_requests_thread_safe() -> None:
     """Concurrent request recordings do not lose counter increments."""
-    _ = await asyncio.gather(
-        *(record_request(ApiType.DISPLAY, "demo-display") for _ in range(50))
-    )
+    _ = await asyncio.gather(*(record_request(ApiType.DISPLAY, "demo-display") for _ in range(50)))
 
     posture = (await get_posture("demo-display"))[0]
 

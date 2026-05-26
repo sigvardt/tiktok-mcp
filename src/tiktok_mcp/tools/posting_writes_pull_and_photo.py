@@ -359,9 +359,7 @@ async def _publish_alias(publish_id: str) -> str | None:
 
 def _drop_expired_publish_aliases(now: datetime) -> None:
     expired_publish_ids = [
-        publish_id
-        for publish_id, record in _PUBLISH_ALIASES.items()
-        if record.expires_at <= now
+        publish_id for publish_id, record in _PUBLISH_ALIASES.items() if record.expires_at <= now
     ]
     for publish_id in expired_publish_ids:
         _ = _PUBLISH_ALIASES.pop(publish_id, None)

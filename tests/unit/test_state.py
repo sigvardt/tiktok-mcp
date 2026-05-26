@@ -130,9 +130,7 @@ async def test_cleanup_expired_removes_only_expired() -> None:
 async def test_state_token_entropy_url_safe() -> None:
     """Generated state tokens are unique URL-safe high-entropy strings."""
     token_pattern = re.compile(r"^[A-Za-z0-9_-]+$")
-    oauth_states = [
-        await create_state(ApiType.DISPLAY, f"alias-{index}") for index in range(100)
-    ]
+    oauth_states = [await create_state(ApiType.DISPLAY, f"alias-{index}") for index in range(100)]
 
     tokens = {oauth_state.state for oauth_state in oauth_states}
     assert len(tokens) == 100

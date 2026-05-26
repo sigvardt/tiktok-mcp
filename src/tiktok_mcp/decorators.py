@@ -14,9 +14,7 @@ from typing import Any, Literal, ParamSpec, Protocol, TypeVar, cast
 
 WriteApiName = Literal["display", "marketing", "comments", "posting"]
 
-_VALID_API_NAMESPACES: frozenset[str] = frozenset(
-    {"display", "marketing", "comments", "posting"}
-)
+_VALID_API_NAMESPACES: frozenset[str] = frozenset({"display", "marketing", "comments", "posting"})
 _LIVE_ACCOUNT_SAFETY_ENV = "TIKTOK_MCP_LIVE_ACCOUNT_SAFETY"
 # Secure by default: unset TIKTOK_MCP_LIVE_ACCOUNT_SAFETY locks every live write
 # surface so no OAuthed account can mutate live TikTok state by mistake.
@@ -79,6 +77,7 @@ class _AccountChangeMarker(Protocol):
 
 class _ReadOnlyMarker(Protocol):
     __tiktok_mcp_read_only__: bool
+
 
 logger = logging.getLogger(__name__)
 
@@ -167,11 +166,7 @@ def parse_account_changes_env(value: str | None) -> bool:
 
 
 def account_changes_enabled(env_value: str | None = None) -> bool:
-    value = (
-        os.environ.get("TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES")
-        if env_value is None
-        else env_value
-    )
+    value = os.environ.get("TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES") if env_value is None else env_value
     return parse_account_changes_env(value)
 
 
@@ -284,7 +279,7 @@ def _writes_disabled_error(fn: Callable[..., object], api: str) -> dict[str, Any
         ),
         "tool": fn.__name__,
         "api": api,
-        "would_have_done": getattr(fn, "__tiktok_mcp_summary__", f"{fn.__name__}(...)")
+        "would_have_done": getattr(fn, "__tiktok_mcp_summary__", f"{fn.__name__}(...)"),
     }
 
 
@@ -308,7 +303,7 @@ def _live_account_safety_locked_error(fn: Callable[..., object], api: str) -> di
         ),
         "tool": fn.__name__,
         "api": api,
-        "would_have_done": getattr(fn, "__tiktok_mcp_summary__", f"{fn.__name__}(...)")
+        "would_have_done": getattr(fn, "__tiktok_mcp_summary__", f"{fn.__name__}(...)"),
     }
 
 
@@ -321,7 +316,7 @@ def _account_changes_disabled_error(fn: Callable[..., object]) -> dict[str, Any]
         ),
         "tool": fn.__name__,
         "api": "account_changes",
-        "would_have_done": getattr(fn, "__tiktok_mcp_summary__", f"{fn.__name__}(...)")
+        "would_have_done": getattr(fn, "__tiktok_mcp_summary__", f"{fn.__name__}(...)"),
     }
 
 

@@ -50,6 +50,7 @@ async def test_create_custom_audience_upload_replay(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setenv("HOME", str(Path.cwd()))
+    monkeypatch.setenv("USERPROFILE", str(Path.cwd()))
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.content.lower()

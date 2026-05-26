@@ -56,10 +56,7 @@ def test_resources_are_listed_by_the_mcp_server() -> None:
         resources_response = _read_message(process.stdout, expected_id=2)
         resources_result = cast(dict[str, object], resources_response["result"])
         resources = cast(list[dict[str, object]], resources_result["resources"])
-        resource_by_uri = {
-            cast(str, resource["uri"]): resource
-            for resource in resources
-        }
+        resource_by_uri = {cast(str, resource["uri"]): resource for resource in resources}
 
         assert set(resource_by_uri) == {
             "tiktok-mcp://accounts/",

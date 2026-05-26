@@ -140,11 +140,7 @@ async def test_async_report_lifecycle_polls_and_downloads_csv(
         )
 
     business_requests = _install_business_client(monkeypatch, handler)
-    csv_text = (
-        "ad_id,spend,currency_code,timezone\n"
-        "ad-1,12.34,USD,UTC\n"
-        "ad-2,5.00,USD,UTC\n"
-    )
+    csv_text = "ad_id,spend,currency_code,timezone\nad-1,12.34,USD,UTC\nad-2,5.00,USD,UTC\n"
     download_requests = _install_download_client(monkeypatch, csv_text)
 
     created = await marketing_run_async_report(

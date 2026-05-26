@@ -231,9 +231,7 @@ class DisplayApiError(TikTokMCPError):
         super().__init__(
             code="display_api_error",
             message=message,
-            context=_merge_context(
-                {"http_status": http_status, "error_code": error_code}, context
-            ),
+            context=_merge_context({"http_status": http_status, "error_code": error_code}, context),
         )
 
 

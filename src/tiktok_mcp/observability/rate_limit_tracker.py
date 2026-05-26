@@ -102,9 +102,7 @@ async def record_429(
 ) -> None:
     now = _now()
     projected_backoff_until = (
-        now + timedelta(seconds=retry_after_seconds)
-        if retry_after_seconds is not None
-        else None
+        now + timedelta(seconds=retry_after_seconds) if retry_after_seconds is not None else None
     )
     key = (api_type, alias)
     async with _LOCK:
@@ -125,9 +123,7 @@ async def get_posture(alias: str | None = None) -> list[RateLimitPosture]:
     now = _now()
     async with _LOCK:
         matching_items = [
-            (key, state)
-            for key, state in _TRACKER.items()
-            if alias is None or key[1] == alias
+            (key, state) for key, state in _TRACKER.items() if alias is None or key[1] == alias
         ]
         postures: list[RateLimitPosture] = []
         for (api_type, account_alias), state in matching_items:

@@ -449,7 +449,9 @@ async def test_add_account_with_loopback_display_happy_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _ = allow_account_changes
-    await _store_app_credentials(backend, ApiType.DISPLAY, redirect_uri="http://localhost:8000/callback")
+    await _store_app_credentials(
+        backend, ApiType.DISPLAY, redirect_uri="http://localhost:8000/callback"
+    )
     _mock_token_exchange(monkeypatch, TOKEN_PAYLOAD)
     pkce_verifier = "A" * 43
     monkeypatch.setattr(accounts_module, "_new_pkce_verifier", lambda: pkce_verifier)
@@ -601,6 +603,7 @@ async def test_loopback_timeout(
         redirect_uri=f"http://localhost:{unused_tcp_port}/callback",
     )
     monkeypatch.setattr(accounts_module, "_LOOPBACK_TIMEOUT_SECONDS", 0.01)
+
     def open_browser_noop(url: str) -> bool:
         _ = url
         return True
@@ -633,9 +636,7 @@ async def test_complete_account_login_persists_sandbox_flag(
 
     assert response["alias"] == "nordic-display-sandbox"
     assert response["sandbox"] is True
-    sandbox_record = await backend.get(
-        account_key(ApiType.DISPLAY, True, "nordic-display-sandbox")
-    )
+    sandbox_record = await backend.get(account_key(ApiType.DISPLAY, True, "nordic-display-sandbox"))
     assert sandbox_record is not None
     assert await backend.get(account_key(ApiType.DISPLAY, False, "nordic-display-sandbox")) is None
     account, _tokens = deserialize_account_record(sandbox_record)

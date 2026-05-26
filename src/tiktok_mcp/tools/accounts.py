@@ -693,8 +693,8 @@ def _redirect_url_from_loopback_request(
     loopback_redirect: LoopbackRedirect,
 ) -> str:
     try:
-        method, target, _version = request_line.decode("ascii", errors="replace").strip().split(
-            maxsplit=2
+        method, target, _version = (
+            request_line.decode("ascii", errors="replace").strip().split(maxsplit=2)
         )
     except ValueError as exc:
         raise TikTokMCPError(
@@ -1065,7 +1065,6 @@ def build_rfc7636_pkce_challenge(code_verifier: str) -> str:
 
 def _build_tiktok_pkce_challenge(code_verifier: str) -> str:
     return hashlib.sha256(code_verifier.encode("ascii")).hexdigest()
-
 
 
 def _new_pkce_verifier() -> str:

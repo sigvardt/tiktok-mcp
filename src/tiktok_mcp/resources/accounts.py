@@ -70,9 +70,7 @@ class AppCredentialResourceEntry(BaseModel):
         return cls(
             api_type=credentials.api_type,
             sandbox=credentials.sandbox,
-            client_key_fingerprint=client_key_fingerprint(
-                credentials.client_id.get_secret_value()
-            ),
+            client_key_fingerprint=client_key_fingerprint(credentials.client_id.get_secret_value()),
             secret_set=bool(credentials.client_secret.get_secret_value()),
             sandbox_secret_set=sandbox_secret_set,
             registered_redirect_uri=registered_redirect_uri,

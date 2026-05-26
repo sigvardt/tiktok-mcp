@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import json
 import os
-import selectors
+import queue
 import subprocess
 import sys
+import threading
 import time
 from contextlib import suppress
 from pathlib import Path
@@ -195,22 +196,27 @@ def _content_length(header: str) -> int:
 
 def _readline_with_deadline(proc: subprocess.Popen[str], deadline: float) -> str:
     assert proc.stdout is not None
-    selector = selectors.DefaultSelector()
-    selector.register(proc.stdout, selectors.EVENT_READ)
+    result: queue.Queue[str | BaseException] = queue.Queue(maxsize=1)
+
+    def read_line() -> None:
+        try:
+            result.put(proc.stdout.readline())
+        except BaseException as exc:
+            result.put(exc)
+
+    threading.Thread(target=read_line, daemon=True).start()
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError(f"Timed out waiting for MCP response. stderr={_finished_stderr(proc)!r}")
     try:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError(
-                f"Timed out waiting for MCP response. stderr={_finished_stderr(proc)!r}"
-            )
-        ready = selector.select(timeout=remaining)
-        if not ready:
-            raise TimeoutError(
-                f"Timed out waiting for MCP response. stderr={_finished_stderr(proc)!r}"
-            )
-        return proc.stdout.readline()
-    finally:
-        selector.close()
+        item = result.get(timeout=remaining)
+    except queue.Empty as exc:
+        raise TimeoutError(
+            f"Timed out waiting for MCP response. stderr={_finished_stderr(proc)!r}"
+        ) from exc
+    if isinstance(item, BaseException):
+        raise item
+    return item
 
 
 def _json_object(raw_payload: str) -> JsonObject:

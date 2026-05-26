@@ -28,9 +28,7 @@ def _find_doc() -> Path:
         candidate = parent / "docs" / "security-model.md"
         if candidate.is_file() and (parent / "pyproject.toml").is_file():
             return candidate
-    raise FileNotFoundError(
-        "Could not locate docs/security-model.md from tests/docs/"
-    )
+    raise FileNotFoundError("Could not locate docs/security-model.md from tests/docs/")
 
 
 def _split_row(row: str) -> list[str]:
@@ -106,14 +104,10 @@ def main() -> int:
 
     missing = sorted(referenced_layers - layer_headings)
     if missing:
-        failures.append(
-            f"Layer references without matching '### Layer N:' headings: {missing}"
-        )
+        failures.append(f"Layer references without matching '### Layer N:' headings: {missing}")
 
     if failures:
-        _ = sys.stderr.write(
-            f"validate_security_matrix: {len(failures)} problem(s) in {doc}\n"
-        )
+        _ = sys.stderr.write(f"validate_security_matrix: {len(failures)} problem(s) in {doc}\n")
         for failure in failures:
             _ = sys.stderr.write(f"  - {failure}\n")
         return 1

@@ -355,9 +355,7 @@ def _row_with_explicit_currency_timezone(
         if value is None
     ]
     if missing_fields:
-        raise ValueError(
-            "Marketing report row is missing explicit " + ", ".join(missing_fields)
-        )
+        raise ValueError("Marketing report row is missing explicit " + ", ".join(missing_fields))
 
     enriched_row = dict(row)
     enriched_row["currency_code"] = currency_code

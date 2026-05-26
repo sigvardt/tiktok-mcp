@@ -70,7 +70,7 @@ def validate_audience_source_path(
     cwd: Path | None = None,
 ) -> Path | dict[str, object]:
     parsed = urlparse(source_file_path)
-    if parsed.scheme or parsed.netloc:
+    if parsed.netloc or (parsed.scheme and not _looks_like_windows_drive_path(source_file_path)):
         return _invalid_path_error("source_file_path must be a local file-system path")
 
     raw_path = Path(source_file_path)
@@ -173,6 +173,10 @@ def _normalized_match_key(match_key: str) -> str:
 
 def _invalid_path_error(message: str) -> dict[str, object]:
     return {"error": "invalid_path", "message": message}
+
+
+def _looks_like_windows_drive_path(value: str) -> bool:
+    return len(value) >= 3 and value[0].isalpha() and value[1] == ":" and value[2] in {"/", "\\"}
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:

@@ -51,9 +51,7 @@ def main() -> int:
             sys.stderr.write(f"  - {failure}\n")
         return 1
 
-    sys.stdout.write(
-        f"validate_readme_json: validated {len(blocks)} JSON block(s) in {readme}\n"
-    )
+    sys.stdout.write(f"validate_readme_json: validated {len(blocks)} JSON block(s) in {readme}\n")
     return 0
 
 

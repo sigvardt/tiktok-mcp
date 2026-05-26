@@ -28,7 +28,7 @@ APP_CREDS_KEY_SUFFIX = "::app_creds"
 DISPLAY_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
 DISPLAY_LIKE_APIS = frozenset({ApiType.DISPLAY, ApiType.CONTENT_POSTING})
 INVALID_AUTH_CODE_CODES = frozenset({40000, 40105})
-CLIENT_SECRET_FIELD = "client_" "secret"
+CLIENT_SECRET_FIELD = "client_secret"
 SecretStrInput: TypeAlias = str
 
 

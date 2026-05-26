@@ -93,7 +93,6 @@ async def test_keyring_roundtrip(memory_keyring: MemoryKeyring) -> None:
 
     await backend.delete(key)
 
-
     assert await backend.get(key) is None
 
 

@@ -143,9 +143,7 @@ async def test_concurrent_expired_token_requests_trigger_one_refresh(
     client = DisplayAPIClient(account, _make_credentials())
     _patch_http_client(monkeypatch, client, handler)
 
-    responses = await asyncio.gather(
-        *(client.request("GET", "/v2/user/info/") for _ in range(5))
-    )
+    responses = await asyncio.gather(*(client.request("GET", "/v2/user/info/") for _ in range(5)))
 
     assert responses == [{"ok": True}] * 5
     assert len(refresh_requests) == 1

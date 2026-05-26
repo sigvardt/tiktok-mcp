@@ -38,17 +38,13 @@ logger = logging.getLogger(__name__)
 
 
 class KeychainBackend(Protocol):
-    async def get(self, key: str) -> str | None:
-        ...
+    async def get(self, key: str) -> str | None: ...
 
-    async def set(self, key: str, value: str) -> None:
-        ...
+    async def set(self, key: str, value: str) -> None: ...
 
-    async def delete(self, key: str) -> None:
-        ...
+    async def delete(self, key: str) -> None: ...
 
-    async def list_keys(self, prefix: str) -> list[str]:
-        ...
+    async def list_keys(self, prefix: str) -> list[str]: ...
 
 
 class AccountRecord(BaseModel):
@@ -104,9 +100,7 @@ class KeyringBackend:
             parts.append(part)
 
         try:
-            return base64.b64decode("".join(parts).encode("ascii"), validate=True).decode(
-                "utf-8"
-            )
+            return base64.b64decode("".join(parts).encode("ascii"), validate=True).decode("utf-8")
         except (binascii.Error, UnicodeDecodeError) as exc:
             raise KeychainUnavailableError(
                 "Chunked keychain entry could not be decoded.", context={"key": key}

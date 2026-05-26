@@ -25,9 +25,7 @@ from pathlib import Path
 
 INLINE_CODE_PATTERN = re.compile(r"`([^`\n]+)`")
 SRC_PATH_PATTERN = re.compile(r"^(src/[A-Za-z0-9_./-]+)$")
-DOTTED_SYMBOL_PATTERN = re.compile(
-    r"^([A-Z][A-Za-z0-9_]+)\.([A-Za-z_][A-Za-z0-9_]+)$"
-)
+DOTTED_SYMBOL_PATTERN = re.compile(r"^([A-Z][A-Za-z0-9_]+)\.([A-Za-z_][A-Za-z0-9_]+)$")
 FENCED_BLOCK_PATTERN = re.compile(
     r"^```[^\n]*\n.*?\n```\s*$",
     re.MULTILINE | re.DOTALL,
@@ -111,9 +109,7 @@ def main(argv: list[str]) -> int:
     for class_name, method_name in sorted(dotted_refs):
         methods = class_methods.get(class_name)
         if methods is None:
-            errors.append(
-                f"missing class for dotted reference: {class_name}.{method_name}"
-            )
+            errors.append(f"missing class for dotted reference: {class_name}.{method_name}")
             continue
         if method_name not in methods:
             errors.append(f"class {class_name} has no method {method_name}")

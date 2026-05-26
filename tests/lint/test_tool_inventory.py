@@ -87,14 +87,14 @@ def test_tool_inventory_matches_name_and_annotation_rules() -> None:
 
         read_only_hint = bool(entry["readOnlyHint"])
         destructive_hint = bool(entry["destructiveHint"])
-        assert (
-            read_only_hint != destructive_hint
-        ), f"tool '{name}' must set exactly one of readOnlyHint/destructiveHint"
+        assert read_only_hint != destructive_hint, (
+            f"tool '{name}' must set exactly one of readOnlyHint/destructiveHint"
+        )
 
         module = entry["module"]
-        assert isinstance(module, str) and module.startswith(
-            "tiktok_mcp.tools."
-        ), f"tool '{name}' has invalid module {module!r}"
+        assert isinstance(module, str) and module.startswith("tiktok_mcp.tools."), (
+            f"tool '{name}' has invalid module {module!r}"
+        )
 
         if name in ACCOUNT_CHANGE_NAMES:
             assert destructive_hint, f"tool '{name}' missing destructiveHint=True"
@@ -108,9 +108,7 @@ def test_tool_inventory_matches_name_and_annotation_rules() -> None:
 
         if _is_write_name(name):
             assert destructive_hint, f"tool '{name}' missing destructiveHint=True"
-            assert entry["has_write_gate_decorator"], (
-                f"tool '{name}' missing write-gate decorator"
-            )
+            assert entry["has_write_gate_decorator"], f"tool '{name}' missing write-gate decorator"
             assert not entry["has_account_changes_gate_decorator"], (
                 f"tool '{name}' must not use account-change decorator"
             )
@@ -132,9 +130,7 @@ def test_tool_inventory_matches_name_and_annotation_rules() -> None:
 def test_write_tools_have_blocked_plan_coverage() -> None:
     inventory = list_all_tools_with_annotations()
     write_tool_names = {
-        entry["name"]
-        for entry in inventory
-        if entry["has_write_gate_decorator"] is True
+        entry["name"] for entry in inventory if entry["has_write_gate_decorator"] is True
     }
     covered_tool_names = write_tools_with_writes_disabled_plan_coverage()
 

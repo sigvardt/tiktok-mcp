@@ -84,9 +84,10 @@ async def test_path_traversal_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_hash_format() -> None:
     assert hash_identifier("  Audience.User.001@Example.Test  ", "email") == EXPECTED_EMAIL_HASH
-    assert hash_identifier(" +1 (234) 567-8900 ", "phone") == hashlib.sha256(
-        b"12345678900"
-    ).hexdigest()
+    assert (
+        hash_identifier(" +1 (234) 567-8900 ", "phone")
+        == hashlib.sha256(b"12345678900").hexdigest()
+    )
 
     hashed_rows = list(iter_hashed_audience_csv_rows(FIXTURE_PATH, ["email"]))
     assert hashed_rows[0] == "email_sha256\n"
@@ -102,6 +103,7 @@ async def test_no_pii_in_logs(
     monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "marketing")
     monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
     monkeypatch.setenv("HOME", str(Path.cwd()))
+    monkeypatch.setenv("USERPROFILE", str(Path.cwd()))
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.content.lower()

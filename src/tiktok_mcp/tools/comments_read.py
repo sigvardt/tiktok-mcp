@@ -212,12 +212,11 @@ async def _business_id_for_alias(alias: str) -> str:
 
 
 class _CommentsClientFactory:
-    (
-        "Protocol used for test injection of MockTransport-backed clients. "
-        "NOT a factory pattern — it's a structural typing hook so respx tests "
-        "can substitute a transport without monkeypatching the production "
-        "client constructor."
-    )
+    """Protocol used for MockTransport-backed test injection.
+
+    This is a structural typing hook so tests can substitute a transport without
+    monkeypatching the production client constructor.
+    """
 
     def __init__(self, alias: str) -> None:
         self._alias: str = alias

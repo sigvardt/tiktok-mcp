@@ -57,9 +57,7 @@ def _clean_pasted_url(raw: str) -> str:
         cleaned_url = markdown_match.group("url").strip()
 
     while (
-        len(cleaned_url) >= 2
-        and cleaned_url[0] == cleaned_url[-1]
-        and cleaned_url[0] in {'"', "`"}
+        len(cleaned_url) >= 2 and cleaned_url[0] == cleaned_url[-1] and cleaned_url[0] in {'"', "`"}
     ):
         cleaned_url = cleaned_url[1:-1].strip()
 

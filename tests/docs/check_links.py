@@ -6,7 +6,7 @@ Exits 0 if every URL returns 2xx or 3xx, or if the network is unreachable
 non-zero only when at least one URL returns a confirmed 4xx or 5xx response.
 
 Usage:
-    python tests/docs/check_links.py docs/release.md
+    python tests/docs/check_links.py README.md docs/release.md
 """
 
 from __future__ import annotations
@@ -20,9 +20,7 @@ from urllib.parse import urlparse
 
 URL_PATTERN = re.compile(r"https://[^\s)\]<>\"'`,]+")
 TIMEOUT_SECONDS = 10.0
-USER_AGENT = (
-    "tiktok-mcp-link-check/1.0 (+https://github.com/signikant/tiktok-mcp)"
-)
+USER_AGENT = "tiktok-mcp-link-check/1.0 (+https://github.com/sigvardt/tiktok-mcp)"
 RETRY_WITH_GET_CODES = {400, 403, 405, 501}
 
 
@@ -76,24 +74,25 @@ def check_url(url: str) -> tuple[str, int | None, str]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print(f"usage: {argv[0]} <markdown-file>", file=sys.stderr)
+    if len(argv) < 2:
+        print(f"usage: {argv[0]} <markdown-file> [...]", file=sys.stderr)
         return 2
 
-    path = argv[1]
-    try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-    except OSError as exc:
-        print(f"cannot read {path}: {exc}", file=sys.stderr)
-        return 2
+    texts: list[str] = []
+    for path in argv[1:]:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                texts.append(fh.read())
+        except OSError as exc:
+            print(f"cannot read {path}: {exc}", file=sys.stderr)
+            return 2
 
-    urls = extract_urls(text)
+    urls = extract_urls("\n".join(texts))
     if not urls:
-        print(f"{path}: no https:// URLs found")
+        print("no https:// URLs found")
         return 0
 
-    print(f"{path}: checking {len(urls)} URL(s)")
+    print(f"checking {len(urls)} URL(s)")
     failures: list[tuple[str, str]] = []
     skipped: list[tuple[str, str]] = []
     for url in urls:
