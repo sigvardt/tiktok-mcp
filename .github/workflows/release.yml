@@ -1,6 +1,7 @@
 name: release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+*'
@@ -75,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: read
+      contents: write
     environment:
       name: pypi
       url: https://pypi.org/p/tiktok-mcp
@@ -106,6 +107,7 @@ jobs:
         with:
           verify-metadata: true
           print-hash: true
+          skip-existing: true
 
       - name: Wait for PyPI JSON API
         run: |
