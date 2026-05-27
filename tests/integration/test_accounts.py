@@ -628,7 +628,9 @@ async def test_add_account_with_loopback_can_use_dynamic_port(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _ = allow_account_changes
-    await _store_app_credentials(backend, ApiType.DISPLAY, redirect_uri="http://localhost:8000/callback")
+    await _store_app_credentials(
+        backend, ApiType.DISPLAY, redirect_uri="http://localhost:8000/callback"
+    )
     _mock_token_exchange(monkeypatch, TOKEN_PAYLOAD)
     opened_urls = _install_loopback_browser(monkeypatch)
 
@@ -690,7 +692,9 @@ async def test_add_account_with_loopback_rejects_invalid_callback_port(
     allow_account_changes: None,
 ) -> None:
     _ = allow_account_changes
-    await _store_app_credentials(backend, ApiType.DISPLAY, redirect_uri="http://localhost:8000/callback")
+    await _store_app_credentials(
+        backend, ApiType.DISPLAY, redirect_uri="http://localhost:8000/callback"
+    )
 
     response = await add_account_with_loopback(
         ApiType.DISPLAY,
