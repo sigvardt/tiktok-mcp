@@ -52,7 +52,6 @@ jobs:
           fi
           {
             printf 'VERSION=%s\n' "$version"
-            printf 'UVX_INDEX_ARGS=\n'
           } >> "$GITHUB_ENV"
 
       - name: Resolve release smoke coordinates
@@ -70,7 +69,6 @@ jobs:
           fi
           {
             printf 'VERSION=%s\n' "$version"
-            printf 'UVX_INDEX_ARGS=\n'
           } >> "$GITHUB_ENV"
 
       - name: Wait for package index propagation
@@ -81,11 +79,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          index_args=()
-          if [ -n "$UVX_INDEX_ARGS" ]; then
-            read -r -a index_args <<< "$UVX_INDEX_ARGS"
-          fi
-          output="$(uvx --no-cache "${index_args[@]}" --python "$PYTHON_VERSION" "tiktok-mcp@$VERSION" --version)"
+          output="$(uvx --no-cache --python "$PYTHON_VERSION" "tiktok-mcp@$VERSION" --version)"
           printf '%s\n' "$output"
           if [[ "$output" != *"$VERSION"* ]]; then
             printf 'Expected --version output to contain %s, got: %s\n' "$VERSION" "$output" >&2
@@ -100,19 +94,17 @@ jobs:
           import json
           import os
           import queue
-          import shlex
           import subprocess
           import threading
           import time
 
           version = os.environ["VERSION"]
           python_version = os.environ["PYTHON_VERSION"]
-          index_args = shlex.split(os.environ.get("UVX_INDEX_ARGS", ""))
           config = {
               "mcpServers": {
                   "tiktok-mcp": {
                       "command": "uvx",
-                      "args": ["--no-cache", *index_args, "--python", python_version, f"tiktok-mcp@{version}"],
+                      "args": ["--no-cache", "--python", python_version, f"tiktok-mcp@{version}"],
                       "env": {
                           "TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES": "1",
                           "TIKTOK_MCP_ALLOW_WRITES": "",
