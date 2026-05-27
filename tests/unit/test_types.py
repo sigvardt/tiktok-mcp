@@ -99,7 +99,8 @@ PUBLIC_MODEL_CASES = [
                 client_id=SecretStr("client-id-marker-1"),
                 client_secret=SecretStr("client-secret-marker"),
                 created_at=NOW,
-            )
+            ),
+            registered_redirect_uri="http://localhost:8765/callback",
         ),
         id="app-credentials-summary",
     ),

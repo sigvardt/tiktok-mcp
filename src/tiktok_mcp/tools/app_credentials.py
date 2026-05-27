@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import urllib.parse
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, TypeAlias, cast
 
@@ -32,6 +34,12 @@ CLIENT_SECRET_FIELD = "client_secret"
 SecretStrInput: TypeAlias = str
 
 
+@dataclass(frozen=True)
+class StoredAppCredentials:
+    credentials: AppCredentials
+    redirect_uri: str | None
+
+
 @app.tool(annotations=ToolAnnotations(destructiveHint=True))
 @require_account_changes_enabled
 async def set_app_credentials(
@@ -39,11 +47,14 @@ async def set_app_credentials(
     client_id: str,
     client_secret: SecretStrInput,
     sandbox: bool = False,
+    redirect_uri: str | None = None,
 ) -> dict[str, Any]:
     """Store TikTok app credentials and return a fingerprint-only summary."""
     api = _coerce_api_type(api_type)
     _validate_non_empty(client_id, "client_id")
     _validate_non_empty(SecretStr(client_secret).get_secret_value(), "client_secret")
+    if redirect_uri is not None:
+        _validate_redirect_uri(redirect_uri)
 
     credentials = AppCredentials(
         api_type=api,
@@ -52,8 +63,11 @@ async def set_app_credentials(
         client_secret=SecretStr(client_secret),
         created_at=datetime.now(UTC),
     )
-    await _write_app_credentials(credentials)
-    return AppCredentialsSummary.from_credentials(credentials).model_dump(mode="json")
+    await _write_app_credentials(credentials, redirect_uri=redirect_uri)
+    return AppCredentialsSummary.from_credentials(
+        credentials,
+        registered_redirect_uri=redirect_uri,
+    ).model_dump(mode="json")
 
 
 @app.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -68,9 +82,12 @@ async def list_app_credentials() -> dict[str, Any]:
         stored = await backend.get(key)
         if stored is None:
             continue
-        app_credentials = _deserialize_app_credentials(stored)
+        app_credentials = _deserialize_app_credentials_record(stored)
         credentials.append(
-            AppCredentialsSummary.from_credentials(app_credentials).model_dump(mode="json")
+            AppCredentialsSummary.from_credentials(
+                app_credentials.credentials,
+                registered_redirect_uri=app_credentials.redirect_uri,
+            ).model_dump(mode="json")
         )
 
     return {"credentials": credentials, "count": len(credentials)}
@@ -88,17 +105,19 @@ async def verify_app_credentials(api_type: ApiType, sandbox: bool = False) -> di
     rejecting only that field means the app credentials were accepted well enough to parse.
     """
     api = _coerce_api_type(api_type)
-    credentials = await _read_app_credentials(api, sandbox)
-    if credentials is None:
+    stored_credentials = await _read_app_credentials(api, sandbox)
+    if stored_credentials is None:
         return AppCredentialsVerifyResult(
             api_type=api,
             sandbox=sandbox,
             client_id_fingerprint="",
             valid=False,
+            registered_redirect_uri=None,
             error_code="not_found",
             error_message="No app credentials registered for this api_type/sandbox combo.",
         ).model_dump(mode="json")
 
+    credentials = stored_credentials.credentials
     fingerprint = AppCredentialsSummary.from_credentials(credentials).client_id_fingerprint
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -108,48 +127,97 @@ async def verify_app_credentials(api_type: ApiType, sandbox: bool = False) -> di
             credentials,
             fingerprint,
             valid=False,
+            registered_redirect_uri=stored_credentials.redirect_uri,
             error_code="network_error",
             error_message="Credential verification probe failed.",
         )
 
     if credentials.api_type in DISPLAY_LIKE_APIS:
-        return _display_verify_result(credentials, fingerprint, response)
-    return _business_verify_result(credentials, fingerprint, response)
-
-
-async def _write_app_credentials(credentials: AppCredentials) -> None:
-    backend = await get_backend()
-    await backend.set(
-        app_creds_key(credentials.api_type, credentials.sandbox),
-        _serialize_app_credentials(credentials),
+        return _display_verify_result(
+            credentials,
+            fingerprint,
+            response,
+            registered_redirect_uri=stored_credentials.redirect_uri,
+        )
+    return _business_verify_result(
+        credentials,
+        fingerprint,
+        response,
+        registered_redirect_uri=stored_credentials.redirect_uri,
     )
 
 
-async def _read_app_credentials(api_type: ApiType, sandbox: bool) -> AppCredentials | None:
+async def _write_app_credentials(
+    credentials: AppCredentials,
+    *,
+    redirect_uri: str | None = None,
+) -> None:
+    backend = await get_backend()
+    await backend.set(
+        app_creds_key(credentials.api_type, credentials.sandbox),
+        _serialize_app_credentials(credentials, redirect_uri=redirect_uri),
+    )
+
+
+async def _read_app_credentials(api_type: ApiType, sandbox: bool) -> StoredAppCredentials | None:
     backend = await get_backend()
     stored = await backend.get(app_creds_key(api_type, sandbox))
     if stored is None:
         return None
-    return _deserialize_app_credentials(stored)
+    return _deserialize_app_credentials_record(stored)
 
 
-def _serialize_app_credentials(credentials: AppCredentials) -> str:
+def _serialize_app_credentials(
+    credentials: AppCredentials,
+    *,
+    redirect_uri: str | None = None,
+) -> str:
     _register_app_credentials(credentials)
     payload = credentials.model_dump(mode="json")
     payload["client_id"] = credentials.client_id.get_secret_value()
     payload[CLIENT_SECRET_FIELD] = _secret_value(credentials)
+    if redirect_uri is not None:
+        payload["redirect_uri"] = redirect_uri
     return json.dumps(payload, separators=(",", ":"), sort_keys=True)
 
 
 def _deserialize_app_credentials(blob: str) -> AppCredentials:
+    return _deserialize_app_credentials_record(blob).credentials
+
+
+def _deserialize_app_credentials_record(blob: str) -> StoredAppCredentials:
     try:
         payload = cast(object, json.loads(blob))
     except json.JSONDecodeError as exc:
         raise KeychainUnavailableError("Stored app credentials are not valid JSON.") from exc
 
-    credentials = AppCredentials.model_validate(payload)
+    if not isinstance(payload, dict):
+        raise KeychainUnavailableError("Stored app credentials are not a JSON object.")
+    credentials_payload, redirect_uri = _split_credentials_payload(
+        {str(key): value for key, value in payload.items()}
+    )
+    credentials = AppCredentials.model_validate(credentials_payload)
     _register_app_credentials(credentials)
-    return credentials
+    return StoredAppCredentials(credentials=credentials, redirect_uri=redirect_uri)
+
+
+def _split_credentials_payload(payload: dict[str, object]) -> tuple[dict[str, object], str | None]:
+    nested_credentials = payload.get("credentials")
+    if isinstance(nested_credentials, dict):
+        credentials_payload = {str(key): value for key, value in nested_credentials.items()}
+        redirect_uri = _optional_string_value(payload, "redirect_uri")
+        if redirect_uri is None:
+            redirect_uri = _optional_string_value(credentials_payload, "redirect_uri")
+    else:
+        credentials_payload = payload
+        redirect_uri = _optional_string_value(payload, "redirect_uri")
+
+    filtered_credentials = {
+        key: credentials_payload[key]
+        for key in {"api_type", "sandbox", "client_id", CLIENT_SECRET_FIELD, "created_at"}
+        if key in credentials_payload
+    }
+    return filtered_credentials, redirect_uri
 
 
 def _register_app_credentials(credentials: AppCredentials) -> None:
@@ -189,6 +257,8 @@ def _display_verify_result(
     credentials: AppCredentials,
     fingerprint: str,
     response: httpx.Response,
+    *,
+    registered_redirect_uri: str | None,
 ) -> dict[str, Any]:
     payload = _response_payload(response)
     credential_error = _credential_error_code(payload)
@@ -197,18 +267,31 @@ def _display_verify_result(
             credentials,
             fingerprint,
             valid=False,
+            registered_redirect_uri=registered_redirect_uri,
             error_code=credential_error,
             error_message="TikTok rejected the app credentials.",
         )
     if response.status_code == httpx.codes.OK:
-        return _verify_result(credentials, fingerprint, valid=True)
-    return _network_error_verify_result(credentials, fingerprint, response.status_code)
+        return _verify_result(
+            credentials,
+            fingerprint,
+            valid=True,
+            registered_redirect_uri=registered_redirect_uri,
+        )
+    return _network_error_verify_result(
+        credentials,
+        fingerprint,
+        response.status_code,
+        registered_redirect_uri=registered_redirect_uri,
+    )
 
 
 def _business_verify_result(
     credentials: AppCredentials,
     fingerprint: str,
     response: httpx.Response,
+    *,
+    registered_redirect_uri: str | None,
 ) -> dict[str, Any]:
     payload = _response_payload(response)
     credential_error = _credential_error_code(payload)
@@ -217,12 +300,23 @@ def _business_verify_result(
             credentials,
             fingerprint,
             valid=False,
+            registered_redirect_uri=registered_redirect_uri,
             error_code=credential_error,
             error_message="TikTok rejected the app credentials.",
         )
     if response.status_code == httpx.codes.OK or _has_invalid_auth_code(payload):
-        return _verify_result(credentials, fingerprint, valid=True)
-    return _network_error_verify_result(credentials, fingerprint, response.status_code)
+        return _verify_result(
+            credentials,
+            fingerprint,
+            valid=True,
+            registered_redirect_uri=registered_redirect_uri,
+        )
+    return _network_error_verify_result(
+        credentials,
+        fingerprint,
+        response.status_code,
+        registered_redirect_uri=registered_redirect_uri,
+    )
 
 
 def _verify_result(
@@ -230,6 +324,7 @@ def _verify_result(
     fingerprint: str,
     *,
     valid: bool,
+    registered_redirect_uri: str | None = None,
     error_code: str | None = None,
     error_message: str | None = None,
 ) -> dict[str, Any]:
@@ -238,6 +333,7 @@ def _verify_result(
         sandbox=credentials.sandbox,
         client_id_fingerprint=fingerprint,
         valid=valid,
+        registered_redirect_uri=registered_redirect_uri,
         verified_at=datetime.now(UTC),
         error_code=error_code,
         error_message=error_message,
@@ -248,11 +344,14 @@ def _network_error_verify_result(
     credentials: AppCredentials,
     fingerprint: str,
     status_code: int,
+    *,
+    registered_redirect_uri: str | None = None,
 ) -> dict[str, Any]:
     return _verify_result(
         credentials,
         fingerprint,
         valid=False,
+        registered_redirect_uri=registered_redirect_uri,
         error_code="network_error",
         error_message=f"Credential verification probe failed with HTTP {status_code}.",
     )
@@ -321,6 +420,19 @@ def _coerce_api_type(api_type: ApiType | str) -> ApiType:
 def _validate_non_empty(value: str, name: str) -> None:
     if not value.strip():
         raise ValueError(f"{name} must be non-empty")
+
+
+def _validate_redirect_uri(redirect_uri: str) -> None:
+    parsed_uri = urllib.parse.urlparse(redirect_uri)
+    if parsed_uri.scheme not in {"http", "https"} or not parsed_uri.hostname:
+        raise ValueError("redirect_uri must be an absolute http(s) URL with a host")
+
+
+def _optional_string_value(payload: dict[str, object], key: str) -> str | None:
+    value = payload.get(key)
+    if isinstance(value, str) and value:
+        return value
+    return None
 
 
 __all__ = ["list_app_credentials", "set_app_credentials", "verify_app_credentials"]

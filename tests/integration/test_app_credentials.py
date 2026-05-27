@@ -63,12 +63,16 @@ async def test_set_app_credentials_happy_path(
         client_id="display_client_12345",
         client_secret=SECRET_MARKER,
         sandbox=True,
+        redirect_uri="http://localhost:8000/callback",
     )
+    stored_payload = json.loads(memory_backend.values[app_creds_key(ApiType.DISPLAY, True)])
 
     assert response["api_type"] == "display"
     assert response["sandbox"] is True
     assert response["client_secret_set"] is True
     assert response["client_id_fingerprint"] == "disp...len=20"
+    assert response["registered_redirect_uri"] == "http://localhost:8000/callback"
+    assert stored_payload["redirect_uri"] == "http://localhost:8000/callback"
     assert SECRET_MARKER not in json.dumps(response, sort_keys=True)
 
 
@@ -103,6 +107,7 @@ async def test_list_app_credentials_returns_fingerprints_only(
         client_id=display_id,
         client_secret="display_secret_xyz",
         sandbox=True,
+        redirect_uri="https://example.com/display/callback",
     )
     _ = await set_app_credentials(
         ApiType.MARKETING,
@@ -120,6 +125,10 @@ async def test_list_app_credentials_returns_fingerprints_only(
     assert "display_secret_xyz" not in payload
     assert "marketing_secret_xyz" not in payload
     assert all("client_id" not in entry for entry in response["credentials"])
+    assert any(
+        entry["registered_redirect_uri"] == "https://example.com/display/callback"
+        for entry in response["credentials"]
+    )
 
 
 @pytest.mark.asyncio
@@ -143,6 +152,7 @@ async def test_verify_happy_path(
 
     assert response["valid"] is True
     assert response["error_code"] is None
+    assert response["registered_redirect_uri"] is None
     assert _is_recent_datetime(str(response["verified_at"]))
     assert len(calls) == 1
     assert calls[0][0] == DISPLAY_VERIFY_URL
