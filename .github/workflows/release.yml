@@ -68,7 +68,7 @@ jobs:
           set -euo pipefail
           tmpdir="$(mktemp -d)"
           cd "$tmpdir"
-          uvx tiktok-mcp@${{ steps.package.outputs.version }} --version
+          uvx --refresh tiktok-mcp@${{ steps.package.outputs.version }} --version
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
