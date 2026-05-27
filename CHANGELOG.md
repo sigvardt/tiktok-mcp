@@ -106,3 +106,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **spike:** draft Wave-0 S1/S2/S3 spike scripts and TestPyPI release-spike workflow ([99ff3bb](https://github.com/sigvardt/tiktok-mcp/commit/99ff3bb38507dbc0d9bf965a903cf1cc9a79e9d3))
 
 ## [Unreleased]
+
+## 0.1.1 (2026-05-27)
+
+### Bug Fixes
+
+- Persist `redirect_uri` from `set_app_credentials` so account onboarding can build OAuth URLs after credentials are saved.
+- Preserve exact loopback redirect ports during local OAuth capture and fall back to the manual URL when the registered port is unavailable.
