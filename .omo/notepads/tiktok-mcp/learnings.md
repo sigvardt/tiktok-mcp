@@ -53,12 +53,12 @@ Append new learnings as work progresses; never overwrite.
 Atlas verified availability before delegating T1:
 - `curl https://pypi.org/pypi/tiktok-mcp/json` -> 404 -> AVAILABLE
 - `curl https://pypi.org/pypi/tiktok-complete-mcp/json` -> 404 -> AVAILABLE
-- `curl https://test.pypi.org/pypi/tiktok-mcp/json` -> 404 -> AVAILABLE
+- `curl https://pypi.org/pypi/tiktok-mcp/json` -> 404 -> AVAILABLE
 
 Per DoR §15 decision rule ("`tiktok-mcp` if available, else `tiktok-complete-mcp`"),
 the canonical PyPI name is **`tiktok-mcp`**. T1's specific dependency on S2
 ("need PyPI name decision") is satisfied without waiting on the full S2 runbook.
-S2's remaining work (TestPyPI publisher registration, OIDC binding, vSPIKE tag)
+S2's remaining work (PyPI publisher registration, OIDC binding, vSPIKE tag)
 is still operator-blocked and remains `- [~]`.
 
 Wave 5 T39 (pending-publisher registration) MUST use `tiktok-mcp` as the project

@@ -357,7 +357,7 @@ Wave 4 (Resources + prompts + polish):
 Wave 5 (CI + release pipeline — does NOT ship the release; T37-T41 only):
 ├── 37. .github/workflows/ci.yml (matrix 3 OS × 3 Python, lint + type + test + smoke)
 ├── 38. .github/workflows/release.yml (tag trigger, OIDC publish, fetch-depth: 0 for hatch-vcs)
-├── 39. PyPI pending-publisher registration documentation + first-publish dry run on TestPyPI
+├── 39. PyPI pending-publisher registration documentation + first-publish dry run on PyPI
 ├── 40. release-please / git-cliff CHANGELOG automation (single choice based on research)
 └── 41. Distribution smoke: uvx install + run on fresh macOS/Linux/Windows VMs (CI matrix)
 
@@ -564,95 +564,14 @@ print('OK — 6 URL-shape variations parsed correctly')
   - Files: `spikes/s1_redirect.py`, `spikes/s1_results.md`
   - Pre-commit: `git diff --stat` shows only `spikes/` additions
 
-- [~] S2. **Spike: PyPI OIDC trusted-publishing pending-publisher bootstrap** → BLOCKED EXTERNAL — see .omo/evidence/operator-unblock-checklist.md (agent scaffolding + workflow complete; operator must check package-name availability, register TestPyPI pending publisher, create GitHub Environment `pypi`, push `vSPIKE-0.0.0a0` tag, fill spikes/s2_results.md verdict)
+- [-] S2. **Spike: PyPI OIDC trusted-publishing pending-publisher bootstrap** — cancelled / scope-removed. The repository no longer uses a secondary publish path. Production publishing is documented in `docs/pending-publisher-bootstrap.md` and runs through `.github/workflows/release.yml` with the GitHub Environment `pypi` only.
 
-  **What to do**:
-  - Reserve the chosen PyPI package name (`tiktok-mcp` first; if 404 → `tiktok-complete-mcp`). Document availability check in `spikes/s2_results.md`.
-  - Configure **TestPyPI** pending publisher (NOT production PyPI yet):
-    1. Register the package name with a pending publisher on TestPyPI under the designated PyPI account, pointing to the GitHub repo `<owner>/tiktok-mcp`, workflow file `release.yml`, environment `pypi`.
-    2. Create the GitHub repository environment `pypi` with optional protection rules (e.g. required reviewers off for spike; can tighten later).
-    3. Create a throwaway `spikes/release-spike/` directory with a minimum `pyproject.toml` (`hatchling` build backend, version `0.0.0a0`, name = chosen PyPI name, single `src/tiktok_mcp/__init__.py`).
-    4. Create a throwaway workflow `.github/workflows/release-spike.yml` that triggers on tag `vSPIKE-*`, builds with `uv build` (or `python -m build`), publishes to TestPyPI via `pypa/gh-action-pypi-publish@release/v1` with `repository-url: https://test.pypi.org/legacy/`.
-    5. Push tag `vSPIKE-0.0.0a0`; verify workflow run succeeds; verify `pip index versions <name> -i https://test.pypi.org/simple/` returns `0.0.0a0`.
-  - Document the EXACT 5-step pre-creation dance in `spikes/s2_results.md` so production setup (Wave 5) follows the proven recipe.
-  - Yank the TestPyPI release immediately after verification (so the name stays clean for v0.1.0).
+  **Reason**: The project now publishes only to production PyPI. The tracked spike workflow and spike result scaffold were removed.
 
-  **Must NOT do**:
-  - Do NOT publish to production PyPI in this spike.
-  - Do NOT commit the throwaway `spikes/release-spike/` content into the main package layout — keep isolated.
-  - Do NOT use a PyPI API token (the whole point is OIDC; trust the OIDC flow).
-
-  **Recommended Agent Profile**:
-  - **Category**: `deep`
-    - Reason: Multi-step infra setup with external services (PyPI account, GitHub Actions, environments) — needs careful state tracking.
-  - **Skills**: none required (web UI + Actions YAML)
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES (with S1, S3)
-  - **Parallel Group**: Wave 0
-  - **Blocks**: Wave 5 release pipeline tasks
-  - **Blocked By**: None
-
-  **References**:
-
-  **External docs**:
-  - PyPI pending publishers: `https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/`
-  - GitHub Action: `https://github.com/pypa/gh-action-pypi-publish` (use `release/v1` ref; check README for current `id-token: write` snippet)
-  - hatchling: `https://hatch.pypa.io/latest/config/build/` (build-system requires + project metadata)
-  - hatch-vcs: `https://github.com/ofek/hatch-vcs` (tag-driven version pattern)
-
-  **Internal context**:
-  - The user's GitHub account / organization that will host this repo — confirm with user before configuring environment
-
-  **WHY each reference matters**:
-  - Pending-publisher flow is non-obvious: register BEFORE the package exists on PyPI, then first publish completes the binding. Getting the sequence wrong causes a "no project found" 4xx loop.
-  - `id-token: write` permission must be set at job level, not workflow level, for OIDC to work — easy to mis-place.
-
-  **Acceptance Criteria**:
-  - [ ] `spikes/s2_results.md` documents the exact 5-step bootstrap sequence with the values used
-  - [ ] `pip index versions <chosen-name> -i https://test.pypi.org/simple/` returns at least one version
-  - [ ] GitHub workflow run for `vSPIKE-0.0.0a0` shows conclusion=success (verify via `gh run view`)
-  - [ ] TestPyPI release yanked immediately after verification (`pip index` may still show it but unyielded)
-  - [ ] No PyPI API token committed or stored anywhere
-
-  **QA Scenarios (MANDATORY)**:
-
-  ```
-  Scenario: TestPyPI pending publisher completes binding on first publish (happy path)
-    Tool: Bash + gh CLI
-    Preconditions: GitHub repo created at the chosen path; TestPyPI account exists; pending publisher registered with: project name=<name>, owner=<gh-user>, repo=tiktok-mcp, workflow=release-spike.yml, env=pypi
-    Steps:
-      1. git push origin main  # establishes baseline
-      2. git tag vSPIKE-0.0.0a0 && git push origin vSPIKE-0.0.0a0
-      3. gh run watch --exit-status   # wait for workflow to complete
-      4. curl -fsSL https://test.pypi.org/pypi/<name>/json | jq '.releases | keys'
-    Expected Result: workflow exit 0; jq output includes "0.0.0a0"; pending publisher converted to active
-    Failure Indicators: workflow fails on "id_token" step → check `id-token: write` placement; "no project found" → pending publisher mis-configured
-    Evidence: .omo/evidence/task-S2-testpypi-bind.txt (gh run log + jq output)
-
-  Scenario: Verify OIDC token issuance + no API token in workflow
-    Tool: Bash
-    Preconditions: workflow file exists at .github/workflows/release-spike.yml
-    Steps:
-      1. grep -E "secrets\\.[A-Z_]*TOKEN" .github/workflows/release-spike.yml
-      2. grep "id-token: write" .github/workflows/release-spike.yml
-    Expected Result: grep #1 returns no matches (no token secrets used); grep #2 returns at least one match at job level
-    Evidence: .omo/evidence/task-S2-no-token.txt
-
-  Scenario: Verify package-name availability decision recorded
-    Tool: Bash + jq
-    Preconditions: spike running
-    Steps:
-      1. curl -sf https://pypi.org/pypi/tiktok-mcp/json -o /dev/null && echo TAKEN || echo AVAILABLE
-      2. read spikes/s2_results.md and assert it documents the result
-    Expected Result: file contains either "PyPI name: tiktok-mcp (AVAILABLE)" or "PyPI name: tiktok-complete-mcp (FALLBACK — tiktok-mcp TAKEN)"
-    Evidence: spikes/s2_results.md
-  ```
-
-  **Commit**: YES (groups with S1, S3)
-  - Message: `chore(spike): verify PyPI OIDC trusted-publisher bootstrap via TestPyPI`
-  - Files: `spikes/s2_results.md`, `spikes/release-spike/` (kept for reference; pruned in Wave 5 cleanup), `.github/workflows/release-spike.yml` (kept until v0.1.0 release, then removed)
-  - Pre-commit: workflow run on spike tag passed
+  **Replacement verification**:
+  - `release.yml` has one publish job, `publish-pypi`.
+  - `release.yml` triggers only final tags matching `vX.Y.Z`.
+  - `docs/pending-publisher-bootstrap.md` contains only production PyPI setup.
 
 - [~] S3. **Spike: vcrpy fidelity on `HTTP 200 + code != 0` Business API errors** → BLOCKED EXTERNAL — see .omo/evidence/operator-unblock-checklist.md (agent script + prototype decoder + skip-aware tests complete; operator must export TIKTOK_BUSINESS_SANDBOX_TOKEN and run `uv run --with httpx --with vcrpy --with pytest pytest spikes/test_s3_vcr.py::test_record` to record cassette, then verify scrub + determinism, fill spikes/s3_results.md verdict)
 
@@ -3117,7 +3036,7 @@ print('OK — 6 URL-shape variations parsed correctly')
        - All F1-F4 reviewers APPROVE
        - CHANGELOG updated (manual edit or release-please PR merged)
        - Smoke test on local: `uv run pytest -q`, `uv run mypy src/`, `uv run ruff check src/`
-       - Smoke test in TestPyPI: `git tag v0.1.0-rc.1`, push, wait for release-rc workflow, then `uvx --index-url https://test.pypi.org/simple/ tiktok-mcp@0.1.0-rc.1 --version`
+       - Smoke test in PyPI: push final `v0.1.0`, wait for the release workflow, then `uvx tiktok-mcp@0.1.0 --version`
     3. Production release steps:
        - Sanity: `git status` clean, `main` branch, all tests green
        - `git tag v0.1.0 -m "Release v0.1.0"`
@@ -3158,17 +3077,17 @@ print('OK — 6 URL-shape variations parsed correctly')
   **QA Scenarios**:
 
   ```
-  Scenario: Dry-run rc release per docs
+  Scenario: Dry-run final release per docs
     Tool: Bash
-    Preconditions: docs/release.md written; S2 spike completed; TestPyPI pending publisher registered
+    Preconditions: docs/release.md written; PyPI pending publisher registered
     Steps:
       1. Follow steps 1-5 of "Pre-release checklist" verbatim
-      2. Tag `v0.0.0-rc.1` locally (do NOT push)
+      2. Tag `v0.0.0` locally (do NOT push)
       3. `uv build` → assert wheel + sdist appear in dist/
       4. Inspect wheel metadata: `unzip -p dist/*.whl '*/METADATA' | grep -E "(Name|Version|Requires-Python)"`
-      5. Assert Version matches `0.0.0rc1` (PEP 440 normalization)
+      5. Assert Version matches `0.0.0`
     Expected Result: dry-run produces valid artifacts
-    Evidence: .omo/evidence/task-35-dry-run-rc.txt
+    Evidence: .omo/evidence/task-35-dry-run-final.txt
 
   Scenario: All external links reachable
     Tool: Bash
@@ -3324,7 +3243,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 - [x] 38. `.github/workflows/release.yml` — tag-triggered OIDC PyPI publish
 
   **What to do**:
-  - `.github/workflows/release.yml` triggered ONLY on `push` of tags matching `v[0-9]+.[0-9]+.[0-9]+*`. Single job `release`:
+  - `.github/workflows/release.yml` triggered ONLY on `push` of final tags matching `v[0-9]+.[0-9]+.[0-9]+`. Single job `publish-pypi`:
     - `runs-on: ubuntu-latest`
     - `permissions: { id-token: write, contents: read }` (JOB-level, not workflow-level — security best practice)
     - `environment: { name: pypi, url: https://pypi.org/p/tiktok-mcp }` (uses the GitHub Environment named `pypi`)
@@ -3337,7 +3256,7 @@ print('OK — 6 URL-shape variations parsed correctly')
       6. Post-publish: poll `https://pypi.org/pypi/tiktok-mcp/<version>/json` until 200 (max 5 min)
       7. Post-publish smoke: `uvx tiktok-mcp@<version> --version` in fresh tmpdir → assert exit 0
       8. Create GitHub Release via `softprops/action-gh-release@v2` with auto-generated notes (uses release-please output if T40 picked release-please, else `gh-release` autogen)
-  - Pre-release tags (`v0.1.0-rc.1`, `v0.1.0a1`, etc.) route to TestPyPI instead (parallel `release-testpypi` job triggered on tags matching `v*-*` or `v*[abc]*`).
+  - Non-final tag shapes do not trigger a publish job. The repository has one PyPI publish path.
 
   **Must NOT do**:
   - Use API tokens or username/password (OIDC only).
@@ -3372,31 +3291,31 @@ print('OK — 6 URL-shape variations parsed correctly')
   **QA Scenarios**:
 
   ```
-  Scenario: Push v0.0.0-rc.1 tag → release-testpypi job runs and publishes
+  Scenario: Push final v0.0.1 tag → release-pypi job runs and publishes
     Tool: Bash + gh CLI
-    Preconditions: T39 pending-publisher registered for TestPyPI; release.yml landed
+    Preconditions: T39 pending-publisher registered for PyPI; release.yml landed
     Steps:
-      1. `git tag v0.0.0-rc.1 -m "Release smoke RC"`
-      2. `git push origin v0.0.0-rc.1`
+      1. `git tag v0.0.1 -m "Release smoke final"`
+      2. `git push origin v0.0.1`
       3. `gh run watch` → assert completion success
-      4. `curl -fsSL https://test.pypi.org/pypi/tiktok-mcp/0.0.0rc1/json | jq -r .info.version` → assert "0.0.0rc1"
-      5. `uvx --index-url https://test.pypi.org/simple/ tiktok-mcp@0.0.0rc1 --version` → assert exit 0
-    Expected Result: rc artifact published + installable via uvx from TestPyPI
-    Evidence: .omo/evidence/task-38-rc-testpypi-publish.txt
+      4. `curl -fsSL https://pypi.org/pypi/tiktok-mcp/0.0.1/json | jq -r .info.version` → assert "0.0.1"
+      5. `uvx tiktok-mcp@0.0.1 --version` → assert exit 0
+    Expected Result: final artifact published + installable via uvx from PyPI
+    Evidence: .omo/evidence/task-38-final-pypi-publish.txt
 
   Scenario: Production PyPI routing — STATIC workflow assertion only (NO live prod publish)
     Tool: Bash (yq + actionlint)
-    Preconditions: release.yml landed; rc validation passed
+    Preconditions: release.yml landed
     Steps:
-      1. Parse the workflow YAML: `yq '.jobs.publish.steps[] | select(.uses=="pypa/gh-action-pypi-publish@release/v1") | .with' .github/workflows/release.yml`
-      2. Assert it contains BOTH a TestPyPI-routed step (`repository-url: https://test.pypi.org/legacy/`) AND a prod-routed step (no `repository-url`, defaulting to PyPI)
-      3. Assert prod step has a conditional `if: ${{ !contains(github.ref_name, 'rc') && !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta') }}` (only non-prerelease tags go to prod)
-      4. Assert TestPyPI step has the inverse `if` condition
+      1. Parse the workflow YAML: `yq '.jobs.publish-pypi.steps[] | select(.uses=="pypa/gh-action-pypi-publish@release/v1") | .with' .github/workflows/release.yml`
+      2. Assert the publish step has no `repository-url`, so it uses production PyPI.
+      3. Assert the workflow tag trigger matches only final `vX.Y.Z` tags.
+      4. Assert there is no pre-release conditional routing logic.
       5. Run `actionlint .github/workflows/release.yml` → exit 0
-    Expected Result: workflow YAML correctly routes by tag shape; no live prod publish occurs in this scenario (production PyPI live-publish smoke is deferred to T42)
+    Expected Result: workflow YAML has one production PyPI publish path, and no live publish occurs in this static scenario (production PyPI live-publish smoke is deferred to T42)
     Evidence: .omo/evidence/task-38-prod-routing-static.txt
 
-  > **Note on production publish in T38**: We INTENTIONALLY do not push a non-rc tag during T38's development. The first non-rc tag is `v0.1.0` pushed during T42 — that's the only live production publish of the v0.1.0 release. T38's job here is to PROVE the workflow file would correctly route a non-rc tag, by static YAML assertions, not by actually performing the publish.
+  > **Note on production publish in T38**: We INTENTIONALLY do not push the real release tag during T38's development. The first real tag is `v0.1.0` pushed during T42. T38's job here is to PROVE the workflow file points at production PyPI by static YAML assertions, not by performing the release publish.
 
   Scenario: Push non-tag commit → release workflow does NOT run
     Tool: Bash + gh CLI
@@ -3411,12 +3330,12 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Commit**: `ci(release): OIDC PyPI publish on v* tags (job-level id-token, env: pypi)` — `.github/workflows/release.yml`
 
-- [x] 39. PyPI + TestPyPI pending-publisher registration walkthrough
+- [x] 39. PyPI pending-publisher registration walkthrough
 
   **What to do**:
   - `docs/pending-publisher-bootstrap.md` — copy-paste runbook for first-time setup:
-    1. **TestPyPI registration** (do first, before any tag push):
-       - Navigate to `https://test.pypi.org/manage/account/publishing/`
+    1. **PyPI registration** (do first, before any tag push):
+       - Navigate to `https://pypi.org/manage/account/publishing/`
        - Click "Add pending publisher"
        - Project name: `tiktok-mcp`
        - Owner: `<github-org-or-username>`
@@ -3428,18 +3347,15 @@ print('OK — 6 URL-shape variations parsed correctly')
        - Repo Settings → Environments → New environment `pypi`
        - Optionally: required reviewer + branch protection (only `main` branch can deploy to `pypi`)
        - Save.
-    3. **Production PyPI registration** (after rc validation succeeded):
-       - Same form at `https://pypi.org/manage/account/publishing/`
-       - Identical project + owner + repo + workflow + environment values.
-    4. **Verification commands**:
+    3. **Verification commands**:
        - `gh api /repos/<org>/<repo>/environments/pypi` returns 200
-       - First successful TestPyPI publish completes the "pending → active" transition
-  - Include screenshots in `docs/images/pending-publisher-*.png` (capture during S2 spike if possible).
+       - First successful PyPI publish completes the "pending → active" transition
+  - Include screenshots in `docs/images/pending-publisher-*.png` if captured during operator setup.
   - Cross-link from `docs/release.md` and README.
 
   **Must NOT do**:
   - Embed any API token or secret in the doc (OIDC has none).
-  - Skip the TestPyPI step ("prod-first" risks burning the project name on a half-published artifact).
+  - Skip the PyPI step ("prod-first" risks burning the project name on a half-published artifact).
   - Recommend `pypi-uploader` (deprecated path).
 
   **Recommended Agent Profile**:
@@ -3450,55 +3366,55 @@ print('OK — 6 URL-shape variations parsed correctly')
   - **Can Run In Parallel**: YES
   - **Parallel Group**: Wave 5 with T37, T38, T40, T41
   - **Blocks**: T42 (the first live production publish — v0.1.0 — only happens in T42 after F1-F4 APPROVE, and requires the production pending-publisher form to have been completed by then). Note: T38 does NOT perform live production publish; T38's production routing is verified statically in T38 QA via yq/actionlint only.
-  - **Blocked By**: S2 spike (validates the bootstrap flow conceptually)
+  - **Blocked By**: S2 scope decision (publishing uses production PyPI only)
 
   **References**:
-  - S2 spike findings
+  - S2 scope decision
   - https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/
   - https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment
 
   **Acceptance Criteria**:
   - [ ] `wc -w docs/pending-publisher-bootstrap.md` between 400 and 1500
   - [ ] All step numbers monotonic; no skipped numbers
-  - [ ] References to TestPyPI form URL and Prod PyPI form URL both present
+  - [ ] Reference to PyPI form URL present
   - [ ] `python tests/docs/check_links.py docs/pending-publisher-bootstrap.md` exits 0
 
   **QA Scenarios**:
 
   ```
-  Scenario: TestPyPI registration produces successful first publish
+  Scenario: PyPI registration produces successful first publish
     Tool: Bash (manual operator step + automated verification)
     Preconditions: operator has followed steps 1-2 in the doc
     Steps:
-      1. Run: `curl -fsSL "https://test.pypi.org/pypi/tiktok-mcp/0.0.0rc1/json" | jq -e '.info.version == "0.0.0rc1"'` (verifies the rc actually published, which only happens AFTER the pending-publisher form was submitted + first publish completed the binding)
-      2. Run: `curl -fsSL "https://test.pypi.org/pypi/tiktok-mcp/0.0.0rc1/json" | jq -r '.urls[0].url'` → assert URL contains "/files.pythonhosted.org/" (binding-verified artifact)
-      3. Run: `python -c "import json, urllib.request; data = json.loads(urllib.request.urlopen('https://test.pypi.org/pypi/tiktok-mcp/0.0.0rc1/json').read()); assert 'tiktok-mcp' in data['info']['name']"`
+      1. Run: `curl -fsSL "https://pypi.org/pypi/tiktok-mcp/0.0.1/json" | jq -e '.info.version == "0.0.1"'` (verifies the final artifact actually published, which only happens AFTER the pending-publisher form was submitted + first publish completed the binding)
+      2. Run: `curl -fsSL "https://pypi.org/pypi/tiktok-mcp/0.0.1/json" | jq -r '.urls[0].url'` → assert URL contains "/files.pythonhosted.org/" (binding-verified artifact)
+      3. Run: `python -c "import json, urllib.request; data = json.loads(urllib.request.urlopen('https://pypi.org/pypi/tiktok-mcp/0.0.1/json').read()); assert 'tiktok-mcp' in data['info']['name']"`
 
-    > **Operator one-time external step (per AGENTS.md operator-unblock-checklist convention):** filling out the PyPI pending-publisher form is operator-only because it requires logging into pypi.org. This step is NOT part of automated acceptance criteria. It is captured in `.sisyphus/evidence/operator-unblock-checklist.md` as a prerequisite to running the above automated checks. The above QA verifies the OUTCOME of that operator step (rc was published, binding is active), not the operator action itself.
+    > **Operator one-time external step (per AGENTS.md operator-unblock-checklist convention):** filling out the PyPI pending-publisher form is operator-only because it requires logging into pypi.org. This step is NOT part of automated acceptance criteria. It is captured in `.sisyphus/evidence/operator-unblock-checklist.md` as a prerequisite to running the above automated checks. The above QA verifies the OUTCOME of that operator step (final artifact was published, binding is active), not the operator action itself.
     Expected Result: pending → active transition occurred on first publish
-    Evidence: .omo/evidence/task-39-testpypi-bootstrap.txt
+    Evidence: .omo/evidence/task-39-pypi-bootstrap.txt
 
-  Scenario: Production PyPI bootstrap config is symmetric with TestPyPI (static check)
+  Scenario: Production PyPI bootstrap config is present (static check)
     Tool: Bash (yq + grep)
-    Preconditions: operator has filled out BOTH the TestPyPI and production PyPI pending-publisher forms per docs/pending-publisher-bootstrap.md steps 1-3 (operator-only one-time external step, captured in .sisyphus/evidence/operator-unblock-checklist.md). No live production publish occurs in this scenario — T38 has been intentionally restructured to not push a non-rc tag during development, and the first live production publish happens in T42 only after F1-F4 APPROVE.
+    Preconditions: operator has filled out the PyPI pending-publisher form per docs/pending-publisher-bootstrap.md steps 1-3 (operator-only one-time external step, captured in .sisyphus/evidence/operator-unblock-checklist.md). No live production publish occurs in this scenario — the first live production publish happens in T42 only after F1-F4 APPROVE.
     Steps:
-      1. Run: `yq '.jobs.publish-production' .github/workflows/release.yml` → assert non-empty
-      2. Run: `yq '.jobs.publish-production.permissions.id-token' .github/workflows/release.yml` → assert == "write"
-      3. Run: `yq '.jobs.publish-production.environment.name' .github/workflows/release.yml` → assert == "pypi" (matches the GitHub environment name the operator registered in the production pending-publisher form)
-      4. Run: `yq '.jobs.publish-production.steps[] | select(.uses // "" | test("pypa/gh-action-pypi-publish"))' .github/workflows/release.yml` → assert exactly one match exists (the action that consumes the OIDC binding); assert no `password:` or `username:` field is set (must be OIDC, not token-based)
-      5. Run: `yq '.jobs.publish-production.steps[] | select(.uses // "" | test("pypa/gh-action-pypi-publish")) | .with."repository-url" // ""' .github/workflows/release.yml` → assert empty (PyPI default = production, asymmetry vs TestPyPI which sets `repository-url: https://test.pypi.org/legacy/`); confirms prod job points at prod PyPI
+      1. Run: `yq '.jobs.publish-pypi' .github/workflows/release.yml` → assert non-empty
+      2. Run: `yq '.jobs.publish-pypi.permissions.id-token' .github/workflows/release.yml` → assert == "write"
+      3. Run: `yq '.jobs.publish-pypi.environment.name' .github/workflows/release.yml` → assert == "pypi" (matches the GitHub environment name the operator registered in the pending-publisher form)
+      4. Run: `yq '.jobs.publish-pypi.steps[] | select(.uses // "" | test("pypa/gh-action-pypi-publish"))' .github/workflows/release.yml` → assert exactly one match exists (the action that consumes the OIDC binding); assert no `password:` or `username:` field is set (must be OIDC, not token-based)
+      5. Run: `yq '.jobs.publish-pypi.steps[] | select(.uses // "" | test("pypa/gh-action-pypi-publish")) | .with."repository-url" // ""' .github/workflows/release.yml` → assert empty (PyPI default = production)
       6. Run: `gh api /repos/<org>/<repo>/environments/pypi --jq '.protection_rules // []'` → assert returns 200 and the environment exists (the operator created it as part of the pending-publisher form). Skip with note if `<org>/<repo>` isn't substituted yet at this stage of development.
-      7. Confirm the rc binding from T38 is independent of the prod binding: this scenario does NOT perform a prod publish and does NOT verify a published prod artifact. Production-PyPI live verification — including `curl https://pypi.org/pypi/tiktok-mcp/0.1.0/json` and metadata symmetry with TestPyPI — happens in T42 only.
-    Expected Result: production publish job config is structurally symmetric with the rc publish job (both OIDC, both pointing at their respective PyPI instance), the operator has completed the prod pending-publisher form (verified via existence of the `pypi` GitHub environment), and no live publish was triggered.
+      7. Confirm this scenario does NOT perform a publish and does NOT verify a published artifact. Production-PyPI live verification — including `curl https://pypi.org/pypi/tiktok-mcp/0.1.0/json` — happens in T42 only.
+    Expected Result: production publish job config is structurally valid, the operator has completed the pending-publisher form (verified via existence of the `pypi` GitHub environment), and no live publish was triggered.
     Failure Indicators:
       - yq returns null for any of the assertions → workflow malformed; reject
       - `password:` or `username:` field present in the production publish step → token-based auth still configured; reject (would defeat OIDC)
-      - Production publish job points at TestPyPI URL → asymmetry; reject
+      - Publish job sets `repository-url` → non-default registry path; reject
       - GitHub environment `pypi` does not exist → operator step 3 not completed; mark as operator-unblock (NOT a config defect)
     Evidence: .omo/evidence/task-39-prod-bootstrap-static.txt
   ```
 
-  **Commit**: `docs: PyPI + TestPyPI pending-publisher bootstrap runbook` — `docs/pending-publisher-bootstrap.md`, `docs/images/pending-publisher-*.png`
+  **Commit**: `docs: PyPI pending-publisher bootstrap runbook` — `docs/pending-publisher-bootstrap.md`, `docs/images/pending-publisher-*.png`
 
 - [x] 40. CHANGELOG automation via release-please
 
@@ -3607,12 +3523,12 @@ print('OK — 6 URL-shape variations parsed correctly')
   - https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#workflow_run
   - `bg_8e111ce0` research notes on uvx + claude_desktop_config wiring per OS
 
-  **Acceptance Criteria** (T41 runs BEFORE T42 — workflow + TestPyPI-rc smoke only; v0.1.0 prod smoke moves to T42):
+  **Acceptance Criteria** (T41 runs BEFORE T42 — workflow + PyPI smoke only; v0.1.0 prod smoke moves to T42):
   - [ ] `actionlint .github/workflows/distribution-smoke.yml` → exit 0
   - [ ] `yq '.jobs.smoke.strategy.matrix | (.os | length) * (.python | length)' .github/workflows/distribution-smoke.yml` → assert == 9 (3 OS × 3 Python)
   - [ ] `yq '.on' .github/workflows/distribution-smoke.yml` triggers on `workflow_run` of `release.yml` AND on `workflow_dispatch` (manual trigger for ad-hoc smoke)
-  - [ ] Manually-triggered TestPyPI-rc smoke run (`gh workflow run distribution-smoke.yml -f source=testpypi -f version=0.0.0rc1`) returns success on all 9 cells
-  - [ ] On simulated failure (fixture branch), workflow opens issue + comments on release (TestPyPI failure path validated)
+  - [ ] Manually-triggered PyPI smoke run (`gh workflow run distribution-smoke.yml -f version=0.0.1`) returns success on all 9 cells
+  - [ ] On simulated failure (fixture branch), workflow opens issue + comments on release (PyPI failure path validated)
   - [ ] No `TIKTOK_MCP_ALLOW_LIVE_WRITES` references in this workflow
 
   **QA Scenarios** (all agent-executable; NO dependency on T42 having published anything):
@@ -3629,16 +3545,16 @@ print('OK — 6 URL-shape variations parsed correctly')
     Expected Result: all 4 checks pass
     Evidence: .omo/evidence/task-41-workflow-static-validation.txt
 
-  Scenario: Manually-triggered smoke against TestPyPI rc returns success on all 9 cells
+  Scenario: Manually-triggered smoke against PyPI final artifact returns success on all 9 cells
     Tool: Bash + gh CLI
-    Preconditions: T38 published an rc to TestPyPI (per T38 QA Scenario 1); distribution-smoke.yml landed
+    Preconditions: T38 published a final artifact to PyPI (per T38 QA Scenario 1); distribution-smoke.yml landed
     Steps:
-      1. `gh workflow run distribution-smoke.yml -f source=testpypi -f version=0.0.0rc1`
+      1. `gh workflow run distribution-smoke.yml -f version=0.0.1`
       2. Wait up to 20 min for completion: `gh run watch --exit-status`
       3. `gh run view --json jobs -q '.jobs | length'` → assert ≥ 9
       4. `gh run view --json conclusion -q .conclusion` → assert "success"
-    Expected Result: all 9 cells green against TestPyPI rc; proves the smoke harness works BEFORE v0.1.0 prod release
-    Evidence: .omo/evidence/task-41-testpypi-rc-smoke.txt
+    Expected Result: all 9 cells green against the published PyPI artifact; proves the smoke harness works before the real v0.1.0 release
+    Evidence: .omo/evidence/task-41-pypi-smoke.txt
 
   Scenario: Simulated PyPI propagation delay handled by retry loop
     Tool: Bash (local test of the wait loop script)
@@ -3675,7 +3591,7 @@ print('OK — 6 URL-shape variations parsed correctly')
 
   **Must NOT do**:
   - Hand-tag `v0.1.0` outside release-please (breaks the changelog state).
-  - Publish to prod before TestPyPI smoke (T38 + T41) passed at least once with an rc.
+  - Publish before release workflow and distribution smoke are green.
   - Skip the operator post-release Claude Desktop boot check — that is the only manual step in the release flow and it lives outside automated acceptance criteria (it is captured by the operator-unblock-checklist mechanism per AGENTS.md, not by an in-task acceptance criterion).
 
   **Recommended Agent Profile**:
@@ -3800,7 +3716,7 @@ uv run ruff check src/             # Expected: 0 errors
 uv run mypy src/                   # Expected: 0 errors (strict mode)
 
 # Local install + smoke
-uv run tiktok-mcp --version        # Expected: 0.1.0 (or pre-release)
+uv run tiktok-mcp --version        # Expected: 0.1.0
 
 # uvx smoke (after publish)
 uvx tiktok-mcp@0.1.0 --version     # Expected: 0.1.0
