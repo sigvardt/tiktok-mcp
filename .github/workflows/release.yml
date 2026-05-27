@@ -4,75 +4,14 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  publish-testpypi:
-    if: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/p/tiktok-mcp
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Build distribution
-        run: uv build
-
-      - name: Smoke install built wheel
-        id: package
-        run: |
-          set -euo pipefail
-          version="$(uv run --with ./dist/*.whl python -c "import tiktok_mcp; print(tiktok_mcp.__version__)")"
-          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
-          printf 'Built package version: %s\n' "$version"
-
-      - name: Publish to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          verify-metadata: true
-          print-hash: true
-
-      - name: Wait for TestPyPI JSON API
-        run: |
-          set -euo pipefail
-          url="https://test.pypi.org/pypi/tiktok-mcp/${{ steps.package.outputs.version }}/json"
-          for attempt in {1..60}; do
-            if curl --fail --silent --show-error --output /dev/null "$url"; then
-              printf 'TestPyPI artifact available at %s\n' "$url"
-              exit 0
-            fi
-            printf 'Waiting for TestPyPI artifact (%s/60)\n' "$attempt"
-            sleep 5
-          done
-          printf 'Timed out waiting for %s\n' "$url" >&2
-          exit 1
-
-      - name: Smoke install from TestPyPI
-        run: |
-          set -euo pipefail
-          tmpdir="$(mktemp -d)"
-          cd "$tmpdir"
-          uvx --index-url https://test.pypi.org/simple/ tiktok-mcp@${{ steps.package.outputs.version }} --version
-
-  publish-production:
-    if: ${{ !contains(github.ref_name, 'rc') && !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta') }}
+  publish-pypi:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
