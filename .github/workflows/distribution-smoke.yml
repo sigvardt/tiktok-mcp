@@ -6,14 +6,6 @@ on:
     types: [completed]
   workflow_dispatch:
     inputs:
-      source:
-        description: Package index to smoke
-        required: true
-        type: choice
-        default: pypi
-        options:
-          - pypi
-          - testpypi
       version:
         description: Version to smoke, without a leading v
         required: true
@@ -50,17 +42,9 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         env:
-          DISPATCH_SOURCE: ${{ inputs.source }}
           DISPATCH_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          case "$DISPATCH_SOURCE" in
-            pypi|testpypi) ;;
-            *)
-              printf 'Unsupported source: %s\n' "$DISPATCH_SOURCE" >&2
-              exit 1
-              ;;
-          esac
           version="${DISPATCH_VERSION#v}"
           if [ -z "$version" ]; then
             printf 'version input is required\n' >&2
@@ -68,12 +52,7 @@ jobs:
           fi
           {
             printf 'VERSION=%s\n' "$version"
-            printf 'SOURCE=%s\n' "$DISPATCH_SOURCE"
-            if [ "$DISPATCH_SOURCE" = "testpypi" ]; then
-              printf 'UVX_INDEX_ARGS=--index-url https://test.pypi.org/simple/\n'
-            else
-              printf 'UVX_INDEX_ARGS=\n'
-            fi
+            printf 'UVX_INDEX_ARGS=\n'
           } >> "$GITHUB_ENV"
 
       - name: Resolve release smoke coordinates
@@ -91,13 +70,12 @@ jobs:
           fi
           {
             printf 'VERSION=%s\n' "$version"
-            printf 'SOURCE=pypi\n'
             printf 'UVX_INDEX_ARGS=\n'
           } >> "$GITHUB_ENV"
 
       - name: Wait for package index propagation
         shell: bash
-        run: bash .github/scripts/wait_for_pypi.sh "$VERSION" "$SOURCE"
+        run: bash .github/scripts/wait_for_pypi.sh "$VERSION"
 
       - name: Smoke uvx --version
         shell: bash

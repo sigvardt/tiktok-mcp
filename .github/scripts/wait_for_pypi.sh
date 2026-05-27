@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 VERSION="${1:?version required}"
-SOURCE="${2:-pypi}"  # "testpypi" or "pypi"
 URL_BASE="https://pypi.org"
-if [ "$SOURCE" = "testpypi" ]; then
-  URL_BASE="https://test.pypi.org"
-fi
 URL="$URL_BASE/pypi/tiktok-mcp/$VERSION/json"
 echo "Waiting for $URL (max 5 min)..."
 START=$(date +%s)
