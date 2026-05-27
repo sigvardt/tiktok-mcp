@@ -33,6 +33,7 @@ from tiktok_mcp.tools.accounts import (
     add_account_with_loopback,
     complete_account_login,
     list_accounts,
+    poll_loopback_login,
     remove_account,
     rename_account,
 )
@@ -103,7 +104,12 @@ def reset_account_tool_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(keychain_module, "_backend", None)
     reset_state_manager()
     accounts_module._PENDING_REMOVALS.clear()
+    accounts_module._PENDING_LOOPBACK_LOGINS.clear()
     yield
+    for pending_login in accounts_module._PENDING_LOOPBACK_LOGINS.values():
+        pending_login.task.cancel()
+        pending_login.server.close()
+    accounts_module._PENDING_LOOPBACK_LOGINS.clear()
     accounts_module._PENDING_REMOVALS.clear()
     reset_state_manager()
     monkeypatch.setattr(keychain_module, "_backend", None)
@@ -136,6 +142,7 @@ async def test_add_account_returns_url_with_state_and_alias(
     assert set(response) == {"url", "state", "suggested_alias", "expires_in", "instructions"}
     assert response["expires_in"] == 600
     assert response["suggested_alias"].startswith("nordic-display-")
+    assert "Incorrect parameters" in response["instructions"]
     parsed_url = urllib.parse.urlparse(response["url"])
     params = urllib.parse.parse_qs(parsed_url.query)
     assert parsed_url.geturl().startswith("https://www.tiktok.com/v2/auth/authorize/")
@@ -227,7 +234,7 @@ async def test_set_app_credentials_redirect_uri_enables_add_account(
 
 
 @pytest.mark.asyncio
-async def test_add_account_uses_loopback_default_for_legacy_display_credentials(
+async def test_add_account_reports_redirect_uri_not_set_for_legacy_display_credentials(
     backend: KeyringBackend,
     allow_account_changes: None,
 ) -> None:
@@ -239,6 +246,40 @@ async def test_add_account_uses_loopback_default_for_legacy_display_credentials(
         alias="nordic-display-legacy",
     )
 
+    assert response["error"] == "redirect_uri_not_set"
+    assert response["context"] == {"api_type": "display", "sandbox": False}
+
+
+@pytest.mark.asyncio
+async def test_add_account_reports_redirect_uri_not_set_for_legacy_content_posting_credentials(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials_without_redirect_uri(backend, ApiType.CONTENT_POSTING)
+
+    response = await add_account(
+        ApiType.CONTENT_POSTING,
+        alias="nordic-posting-legacy",
+    )
+
+    assert response["error"] == "redirect_uri_not_set"
+    assert response["context"] == {"api_type": "content_posting", "sandbox": False}
+
+
+@pytest.mark.asyncio
+async def test_add_account_uses_loopback_default_for_legacy_business_organic_credentials(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials_without_redirect_uri(backend, ApiType.BUSINESS_ORGANIC)
+
+    response = await add_account(
+        ApiType.BUSINESS_ORGANIC,
+        alias="nordic-organic-legacy",
+    )
+
     assert "error" not in response
     parsed_url = urllib.parse.urlparse(response["url"])
     params = urllib.parse.parse_qs(parsed_url.query)
@@ -246,7 +287,7 @@ async def test_add_account_uses_loopback_default_for_legacy_display_credentials(
 
 
 @pytest.mark.asyncio
-async def test_add_account_reports_redirect_uri_not_set_for_legacy_marketing_credentials(
+async def test_add_account_uses_loopback_default_for_legacy_marketing_credentials(
     backend: KeyringBackend,
     allow_account_changes: None,
 ) -> None:
@@ -258,9 +299,11 @@ async def test_add_account_reports_redirect_uri_not_set_for_legacy_marketing_cre
         alias="nordic-marketing-legacy",
     )
 
-    assert response["error"] == "redirect_uri_not_set"
-    assert "app_credentials_not_set" not in json.dumps(response)
-    assert response["context"] == {"api_type": "marketing", "sandbox": False}
+    assert "error" not in response
+    parsed_url = urllib.parse.urlparse(response["url"])
+    params = urllib.parse.parse_qs(parsed_url.query)
+    assert parsed_url.netloc == "business-api.tiktok.com"
+    assert params["redirect_uri"] == [accounts_module.DEFAULT_LOOPBACK_REDIRECT_URI]
 
 
 @pytest.mark.asyncio
@@ -536,6 +579,36 @@ def _install_loopback_browser(
     return opened_urls
 
 
+def _install_loopback_browser_no_callback(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    opened_urls: list[str] = []
+
+    def open_browser(url: str) -> bool:
+        opened_urls.append(url)
+        return True
+
+    monkeypatch.setattr("tiktok_mcp.tools.accounts.webbrowser.open", open_browser)
+    return opened_urls
+
+
+async def _hit_loopback_callback(
+    authorization_url: str,
+    *,
+    callback_code: str = "synthetic-code",
+    callback_state: str | None = None,
+    expected_status: int = httpx.codes.OK,
+) -> httpx.Response:
+    parsed_url = urllib.parse.urlparse(authorization_url)
+    params = urllib.parse.parse_qs(parsed_url.query)
+    returned_state = callback_state or params["state"][0]
+    redirect_uri = urllib.parse.urlparse(params["redirect_uri"][0])
+    callback_query = urllib.parse.urlencode({"code": callback_code, "state": returned_state})
+    callback_url = f"http://127.0.0.1:{redirect_uri.port}{redirect_uri.path}?{callback_query}"
+    async with httpx.AsyncClient() as client:
+        callback_response = await client.get(callback_url)
+    assert callback_response.status_code == expected_status
+    return callback_response
+
+
 @pytest.mark.asyncio
 async def test_add_account_with_loopback_display_happy_path(
     backend: KeyringBackend,
@@ -559,15 +632,18 @@ async def test_add_account_with_loopback_display_happy_path(
         alias="nordic-display-loopback",
         scopes=["user.info.basic", "video.list"],
     )
+    poll_response = await poll_loopback_login(str(response["state"]), wait_seconds=5)
 
-    parsed_auth_url = urllib.parse.urlparse(response["auth_url"])
+    parsed_auth_url = urllib.parse.urlparse(response["url"])
     params = urllib.parse.parse_qs(parsed_auth_url.query)
     redirect_uri = urllib.parse.urlparse(params["redirect_uri"][0])
     expected_challenge = hashlib.sha256(pkce_verifier.encode("ascii")).hexdigest()
 
-    assert opened_urls == [response["auth_url"]]
-    assert response["alias"] == "nordic-display-loopback"
-    assert response["api_type"] == "display"
+    assert response["status"] == "pending"
+    assert response["poll_with"] == "poll_loopback_login"
+    assert opened_urls == [response["url"]]
+    assert poll_response["alias"] == "nordic-display-loopback"
+    assert poll_response["api_type"] == "display"
     assert response["instructions"] == LOOPBACK_INSTRUCTIONS
     assert params["scope"] == ["user.info.basic,video.list"]
     assert params["code_challenge"] == [expected_challenge]
@@ -605,14 +681,16 @@ async def test_add_account_with_loopback_business_happy_path(
         alias="nordic-marketing-loopback",
         scopes=["ignored-scope"],
     )
+    poll_response = await poll_loopback_login(str(response["state"]), wait_seconds=5)
 
-    parsed_auth_url = urllib.parse.urlparse(response["auth_url"])
+    parsed_auth_url = urllib.parse.urlparse(response["url"])
     params = urllib.parse.parse_qs(parsed_auth_url.query)
 
-    assert opened_urls == [response["auth_url"]]
-    assert response["alias"] == "nordic-marketing-loopback"
-    assert response["api_type"] == "marketing"
-    assert response["sandbox"] is True
+    assert response["status"] == "pending"
+    assert opened_urls == [response["url"]]
+    assert poll_response["alias"] == "nordic-marketing-loopback"
+    assert poll_response["api_type"] == "marketing"
+    assert poll_response["sandbox"] is True
     assert response["instructions"] == LOOPBACK_INSTRUCTIONS
     assert params["app_id"] == ["sandbox-client-id"]
     assert params["redirect_uri"] == [f"http://localhost:{unused_tcp_port}/callback"]
@@ -639,13 +717,14 @@ async def test_add_account_with_loopback_can_use_dynamic_port(
         alias="nordic-display-dynamic",
         callback_port=0,
     )
+    poll_response = await poll_loopback_login(str(response["state"]), wait_seconds=5)
 
-    parsed_auth_url = urllib.parse.urlparse(response["auth_url"])
+    parsed_auth_url = urllib.parse.urlparse(response["url"])
     params = urllib.parse.parse_qs(parsed_auth_url.query)
     redirect_uri = urllib.parse.urlparse(params["redirect_uri"][0])
 
-    assert opened_urls == [response["auth_url"]]
-    assert response["alias"] == "nordic-display-dynamic"
+    assert opened_urls == [response["url"]]
+    assert poll_response["alias"] == "nordic-display-dynamic"
     assert redirect_uri.hostname == "localhost"
     assert redirect_uri.port is not None
     assert await backend.get(account_key(ApiType.DISPLAY, False, "nordic-display-dynamic"))
@@ -679,10 +758,11 @@ async def test_add_account_with_loopback_rejects_state_mismatch_before_exchange(
         ApiType.DISPLAY,
         alias="nordic-display-badstate",
     )
+    poll_response = await poll_loopback_login(str(response["state"]), wait_seconds=5)
 
     assert len(opened_urls) == 1
-    assert response["error"] == "oauth_state_invalid"
-    assert response["context"]["reason"] == "unknown"
+    assert poll_response["error"] == "oauth_state_invalid"
+    assert poll_response["context"]["reason"] == "unknown"
     assert await backend.get(account_key(ApiType.DISPLAY, False, "nordic-display-badstate")) is None
 
 
@@ -795,15 +875,48 @@ async def test_loopback_callback_capture(
         alias="nordic-display-loopback",
         await_callback=True,
     )
+    poll_response = await poll_loopback_login(str(response["state"]), wait_seconds=5)
 
     assert opened_urls
-    assert response["alias"] == "nordic-display-loopback"
-    assert response["api_type"] == "display"
+    assert response["status"] == "pending"
+    assert poll_response["alias"] == "nordic-display-loopback"
+    assert poll_response["api_type"] == "display"
     assert await backend.get(account_key(ApiType.DISPLAY, False, "nordic-display-loopback"))
 
 
 @pytest.mark.asyncio
-async def test_loopback_timeout(
+async def test_poll_loopback_login_returns_pending_before_callback(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+    unused_tcp_port: int,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(
+        backend,
+        ApiType.DISPLAY,
+        redirect_uri=f"http://localhost:{unused_tcp_port}/callback",
+    )
+    _mock_token_exchange(monkeypatch, TOKEN_PAYLOAD)
+    opened_urls = _install_loopback_browser_no_callback(monkeypatch)
+
+    response = await add_account(
+        ApiType.DISPLAY,
+        alias="nordic-display-pending",
+        await_callback=True,
+    )
+    pending_response = await poll_loopback_login(str(response["state"]))
+    callback_response = await _hit_loopback_callback(str(response["url"]))
+    complete_response = await poll_loopback_login(str(response["state"]), wait_seconds=5)
+
+    assert opened_urls == [response["url"]]
+    assert pending_response["status"] == "pending"
+    assert "Authentication complete" in callback_response.text
+    assert complete_response["alias"] == "nordic-display-pending"
+
+
+@pytest.mark.asyncio
+async def test_loopback_timeout_is_reported_by_poll(
     backend: KeyringBackend,
     allow_account_changes: None,
     monkeypatch: pytest.MonkeyPatch,
@@ -816,21 +929,52 @@ async def test_loopback_timeout(
         redirect_uri=f"http://localhost:{unused_tcp_port}/callback",
     )
     monkeypatch.setattr(accounts_module, "_LOOPBACK_TIMEOUT_SECONDS", 0.01)
-
-    def open_browser_noop(url: str) -> bool:
-        _ = url
-        return True
-
-    monkeypatch.setattr("tiktok_mcp.tools.accounts.webbrowser.open", open_browser_noop)
+    opened_urls = _install_loopback_browser_no_callback(monkeypatch)
 
     response = await add_account(
         ApiType.DISPLAY,
         alias="nordic-display-timeout",
         await_callback=True,
     )
+    poll_response = await poll_loopback_login(str(response["state"]), wait_seconds=1)
 
-    assert response["error"] == "oauth_loopback_timeout"
-    assert response["context"]["timeout_seconds"] == 0.01
+    assert opened_urls == [response["url"]]
+    assert poll_response["error"] == "oauth_loopback_timeout"
+    assert poll_response["context"]["timeout_seconds"] == 0.01
+
+
+@pytest.mark.asyncio
+async def test_second_pending_loopback_on_same_port_is_rejected(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+    unused_tcp_port: int,
+) -> None:
+    _ = allow_account_changes
+    redirect_uri = f"http://localhost:{unused_tcp_port}/callback"
+    await _store_app_credentials(backend, ApiType.DISPLAY, redirect_uri=redirect_uri)
+    await _store_app_credentials(backend, ApiType.CONTENT_POSTING, redirect_uri=redirect_uri)
+    _mock_token_exchange(monkeypatch, TOKEN_PAYLOAD)
+    _ = _install_loopback_browser_no_callback(monkeypatch)
+
+    first = await add_account(
+        ApiType.DISPLAY,
+        alias="nordic-display-first",
+        await_callback=True,
+    )
+    second = await add_account(
+        ApiType.CONTENT_POSTING,
+        alias="nordic-posting-second",
+        await_callback=True,
+    )
+    await _hit_loopback_callback(str(first["url"]))
+    complete_response = await poll_loopback_login(str(first["state"]), wait_seconds=5)
+
+    assert first["status"] == "pending"
+    assert second["error"] == "oauth_loopback_already_pending"
+    assert second["state"] == first["state"]
+    assert second["poll_with"] == "poll_loopback_login"
+    assert complete_response["alias"] == "nordic-display-first"
 
 
 @pytest.mark.asyncio

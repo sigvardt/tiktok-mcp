@@ -59,6 +59,7 @@ _ACCOUNT_CHANGE_NAMES = frozenset(
         "add_account",
         "add_account_with_loopback",
         "complete_account_login",
+        "poll_loopback_login",
         "remove_account",
         "rename_account",
         "set_app_credentials",

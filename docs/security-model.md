@@ -66,7 +66,7 @@ Tests tagged `@pytest.mark.live_write` are auto-skipped unless `TIKTOK_MCP_ALLOW
 
 ### Layer 10: TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES separate gate
 
-`add_account`, `complete_account_login`, `remove_account`, `rename_account`, and `set_app_credentials` are wrapped with `@require_account_changes_enabled` rather than `@require_writes_enabled`. The orthogonal environment variable means a user onboarding their first account flips `TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES=1` once, then sets it back to `0` or unsets it. From that point on, no further account add or remove succeeds even if `TIKTOK_MCP_ALLOW_WRITES=all` is set. This separates "Claude may mutate TikTok-side state" from "Claude may modify the local account inventory", which are different trust decisions.
+`add_account`, `add_account_with_loopback`, `complete_account_login`, `poll_loopback_login`, `remove_account`, `rename_account`, and `set_app_credentials` are wrapped with `@require_account_changes_enabled` rather than `@require_writes_enabled`. The orthogonal environment variable means a user onboarding their first account flips `TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES=1` once, then sets it back to `0` or unsets it. From that point on, no further account add or remove succeeds even if `TIKTOK_MCP_ALLOW_WRITES=all` is set. This separates "Claude may mutate TikTok-side state" from "Claude may modify the local account inventory", which are different trust decisions.
 
 ## Threat-to-defense matrix
 

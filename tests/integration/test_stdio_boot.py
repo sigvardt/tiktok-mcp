@@ -17,7 +17,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 READ_TIMEOUT_SECONDS = 10.0
 BOOT_WARNING_MS = 1500.0
-EXPECTED_TOOL_COUNT_MIN = 70
+EXPECTED_TOOL_COUNT_MIN = 71
 EXPECTED_RESOURCE_URIS = {
     "tiktok-mcp://accounts/",
     "tiktok-mcp://app-credentials/",

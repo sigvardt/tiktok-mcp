@@ -116,7 +116,9 @@ Source: T10 (account management tools, Wave 2), T11 (app credential tools, Wave 
 | MCP tool name | TikTok endpoint | HTTP method | Required scope | Annotation | Writes namespace | Wave | Task |
 |---|---|---|---|---|---|---|---|
 | add_account | (none, local + OAuth URL builder) | POST | — | destructiveHint | account-changes | 2 | T10 |
+| add_account_with_loopback | (none, local + OAuth URL builder + loopback listener) | POST | — | destructiveHint | account-changes | 2 | T10 |
 | complete_account_login | (per api_type token endpoint) | POST | — | destructiveHint | account-changes | 2 | T10 |
+| poll_loopback_login | (per api_type token endpoint after callback capture) | POST | — | destructiveHint | account-changes | 2 | T10 |
 | list_accounts | (none, local keychain read) | GET | — | readOnlyHint | — | 2 | T10 |
 | rename_account | (none, local keychain rewrite) | POST | — | destructiveHint | account-changes | 2 | T10 |
 | remove_account | (none, local keychain delete) | POST | — | destructiveHint | account-changes | 2 | T10 |
@@ -163,7 +165,7 @@ These rows ship in v0.1 but have an endpoint or scope value that needs a short l
 | Marketing API | 33 |
 | Business Organic | 8 |
 | Content Posting | 13 |
-| Setup | 9 |
-| **Grand total** | **69** |
+| Setup | 11 |
+| **Grand total** | **71** |
 
-Breakdown by annotation: 29 `readOnlyHint`, 40 `destructiveHint`. Breakdown by wave: 33 in Wave 2 (reads plus Setup plus Display token utilities plus `get_publish_status`), 36 in Wave 3 (write-side delivery). The 60 to 80 target band is met. MCP Resources from T29 are counted separately and not included in this rollup.
+Breakdown by annotation: 28 `readOnlyHint`, 43 `destructiveHint`. Breakdown by wave: 35 in Wave 2 (reads plus Setup plus Display token utilities plus `get_publish_status`), 36 in Wave 3 (write-side delivery). The 60 to 80 target band is met. MCP Resources from T29 are counted separately and not included in this rollup.

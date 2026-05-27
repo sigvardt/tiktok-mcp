@@ -10,6 +10,7 @@ import string
 import urllib.parse
 import webbrowser
 from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -74,11 +75,15 @@ _LOOPBACK_ERROR_HTML = (
 INSTRUCTIONS = (
     "Open the URL in your browser, authenticate with a sandbox-allowlisted TikTok account, "
     "then copy the FULL redirect URL from your browser's address bar and call "
-    "complete_account_login with it."
+    "complete_account_login with it. If TikTok shows a redirect_uri or Incorrect parameters "
+    "error, the redirect URI registered with set_app_credentials must match the app's "
+    "developer console exactly."
 )
 LOOPBACK_INSTRUCTIONS = (
     "Open the URL in your browser, sign in to TikTok, and approve the requested scopes. "
-    "The local 127.0.0.1 listener will capture the redirect and finish the login automatically."
+    "The local 127.0.0.1 listener will capture the redirect and finish the login automatically. "
+    "If TikTok shows a redirect_uri or Incorrect parameters error, the redirect URI registered "
+    "with set_app_credentials must match the app's developer console exactly."
 )
 ACCOUNT_KEY_RE = re.compile(
     r"^tiktok-mcp::(?P<api>display|marketing|business_organic|content_posting)::"
@@ -94,12 +99,17 @@ ORGANIC_ACCOUNT_SCOPES = (
     "comment.list.manage",
 )
 PKCE_APIS = frozenset({ApiType.DISPLAY, ApiType.CONTENT_POSTING})
+LOOPBACK_DEFAULT_APIS = frozenset({ApiType.BUSINESS_ORGANIC, ApiType.MARKETING})
 _PKCE_VERIFIER_CHARS = string.ascii_letters + string.digits + "-._~"
 _TIKTOK_PKCE_VERIFIER_LENGTH = 64
 _PENDING_REMOVALS: dict[str, tuple[str, datetime]] = {}
 _PENDING_LOCK = asyncio.Lock()
 _MAX_PENDING_REMOVALS = 100
 _REMOVAL_TTL_SECONDS = 60
+_PENDING_LOOPBACK_LOGINS: dict[str, PendingLoopbackLogin] = {}
+_PENDING_LOOPBACK_LOCK = asyncio.Lock()
+_MAX_PENDING_LOOPBACK_LOGINS = 20
+_MAX_LOOPBACK_POLL_WAIT_SECONDS = 25
 
 
 @dataclass(frozen=True)
@@ -114,6 +124,18 @@ class LoopbackRedirect:
     netloc: str
     path: str
     port: int
+
+
+@dataclass(frozen=True)
+class PendingLoopbackLogin:
+    state: str
+    auth_url: str
+    suggested_alias: str
+    server: asyncio.AbstractServer
+    loopback_redirect: LoopbackRedirect
+    task: asyncio.Task[dict[str, Any]]
+    created_at: datetime
+    expires_at: datetime
 
 
 @app.tool(annotations=ToolAnnotations(destructiveHint=True))
@@ -154,16 +176,22 @@ async def add_account(
                     "or http://127.0.0.1:<port> redirect_uri."
                 ),
             }
-        result = await _complete_loopback_login(url, loopback_redirect, oauth_state.state)
-        if result.get("error") == "oauth_loopback_unavailable":
+        try:
+            return await _start_pending_loopback_login(
+                auth_url=url,
+                state_token=oauth_state.state,
+                suggested_alias=suggested_alias,
+                redirect_uri=loaded_credentials.redirect_uri,
+            )
+        except OSError as exc:
             return _manual_authorization_response(
                 url,
                 oauth_state.state,
                 suggested_alias,
                 warning="oauth_loopback_unavailable",
-                message=str(result.get("message", "Could not start OAuth loopback listener.")),
+                message=f"Could not start OAuth loopback listener: {type(exc).__name__}.",
+                context={"reason": type(exc).__name__},
             )
-        return result
 
     return _manual_authorization_response(url, oauth_state.state, suggested_alias)
 
@@ -202,6 +230,12 @@ async def add_account_with_loopback(
         pkce_verifier,
         scopes=scopes,
     )
+    pending_error = await _pending_loopback_start_error(
+        loaded_credentials.redirect_uri,
+        callback_port=callback_port,
+    )
+    if pending_error is not None:
+        return pending_error
     try:
         listener = await _start_loopback_server(
             loaded_credentials.redirect_uri,
@@ -244,27 +278,15 @@ async def add_account_with_loopback(
         scopes=scopes,
     )
 
-    try:
-        redirect_url = await _await_loopback_callback(server, auth_url, callback_future)
-    except TikTokMCPError as exc:
-        return exc.to_dict()
-    except OSError as exc:
-        return {
-            "error": "oauth_loopback_unavailable",
-            "message": (
-                f"Could not start OAuth loopback listener on "
-                f"{LOOPBACK_BIND_HOST}:{loopback_redirect.port}."
-            ),
-            "context": {"reason": type(exc).__name__},
-        }
-
-    result = await _complete_account_login(
-        redirect_url,
+    return await _register_pending_loopback_login(
+        auth_url=auth_url,
+        state_token=oauth_state.state,
+        suggested_alias=suggested_alias,
+        server=server,
+        loopback_redirect=loopback_redirect,
+        callback_future=callback_future,
         redirect_uri_override=loopback_redirect_url,
     )
-    if "error" in result:
-        return result
-    return {"auth_url": auth_url, "instructions": LOOPBACK_INSTRUCTIONS, **result}
 
 
 @app.tool(annotations=ToolAnnotations(destructiveHint=True))
@@ -274,6 +296,41 @@ async def complete_account_login(
     alias_override: str | None = None,
 ) -> dict[str, Any]:
     return await _complete_account_login(redirect_url, alias_override=alias_override)
+
+
+@app.tool(annotations=ToolAnnotations(destructiveHint=True))
+@require_account_changes_enabled
+async def poll_loopback_login(state: str, wait_seconds: int = 0) -> dict[str, Any]:
+    wait_seconds = max(0, min(wait_seconds, _MAX_LOOPBACK_POLL_WAIT_SECONDS))
+    await _drop_expired_loopback_logins()
+    async with _PENDING_LOOPBACK_LOCK:
+        pending_login = _PENDING_LOOPBACK_LOGINS.get(state)
+    if pending_login is None:
+        return {
+            "error": "oauth_loopback_not_found",
+            "message": "No pending OAuth loopback login exists for this state.",
+            "state": state,
+        }
+
+    if not pending_login.task.done() and wait_seconds > 0:
+        with suppress(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(pending_login.task), timeout=wait_seconds)
+
+    if not pending_login.task.done():
+        return {
+            "status": "pending",
+            "state": state,
+            "url": pending_login.auth_url,
+            "auth_url": pending_login.auth_url,
+            "suggested_alias": pending_login.suggested_alias,
+            "expires_in": _seconds_until(pending_login.expires_at),
+            "poll_with": "poll_loopback_login",
+        }
+
+    result = await pending_login.task
+    async with _PENDING_LOOPBACK_LOCK:
+        _ = _PENDING_LOOPBACK_LOGINS.pop(state, None)
+    return result
 
 
 async def _complete_account_login(
@@ -593,6 +650,184 @@ def _build_http_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=30.0)
 
 
+async def _start_pending_loopback_login(
+    *,
+    auth_url: str,
+    state_token: str,
+    suggested_alias: str,
+    redirect_uri: str,
+    callback_port: int | None = None,
+    redirect_uri_override: str | None = None,
+) -> dict[str, Any]:
+    pending_error = await _pending_loopback_start_error(redirect_uri, callback_port=callback_port)
+    if pending_error is not None:
+        return pending_error
+
+    listener = await _start_loopback_server(
+        redirect_uri,
+        state_token,
+        callback_port=callback_port,
+    )
+    if listener is None:
+        return {
+            "error": "loopback_redirect_required",
+            "message": (
+                "Loopback callback capture requires an http://localhost:<port> "
+                "or http://127.0.0.1:<port> redirect_uri."
+            ),
+        }
+    server, loopback_redirect, callback_future = listener
+    return await _register_pending_loopback_login(
+        auth_url=auth_url,
+        state_token=state_token,
+        suggested_alias=suggested_alias,
+        server=server,
+        loopback_redirect=loopback_redirect,
+        callback_future=callback_future,
+        redirect_uri_override=redirect_uri_override,
+    )
+
+
+async def _pending_loopback_start_error(
+    redirect_uri: str,
+    *,
+    callback_port: int | None = None,
+) -> dict[str, Any] | None:
+    await _drop_expired_loopback_logins()
+    initial_redirect = _loopback_redirect(redirect_uri, port=callback_port)
+    if initial_redirect is None:
+        return {
+            "error": "loopback_redirect_required",
+            "message": (
+                "Loopback callback capture requires an http://localhost:<port> "
+                "or http://127.0.0.1:<port> redirect_uri."
+            ),
+        }
+
+    async with _PENDING_LOOPBACK_LOCK:
+        active_login = _active_pending_loopback_on_port(initial_redirect.port)
+    if active_login is None:
+        return None
+    return {
+        "error": "oauth_loopback_already_pending",
+        "message": "Another OAuth loopback login is already waiting on this callback port.",
+        "state": active_login.state,
+        "poll_with": "poll_loopback_login",
+    }
+
+
+async def _register_pending_loopback_login(
+    *,
+    auth_url: str,
+    state_token: str,
+    suggested_alias: str,
+    server: asyncio.AbstractServer,
+    loopback_redirect: LoopbackRedirect,
+    callback_future: asyncio.Future[str],
+    redirect_uri_override: str | None = None,
+) -> dict[str, Any]:
+    task = asyncio.create_task(
+        _complete_pending_loopback_login(
+            server,
+            callback_future,
+            redirect_uri_override=redirect_uri_override,
+        )
+    )
+    now = datetime.now(UTC)
+    pending_login = PendingLoopbackLogin(
+        state=state_token,
+        auth_url=auth_url,
+        suggested_alias=suggested_alias,
+        server=server,
+        loopback_redirect=loopback_redirect,
+        task=task,
+        created_at=now,
+        expires_at=now + timedelta(seconds=_LOOPBACK_TIMEOUT_SECONDS),
+    )
+    async with _PENDING_LOOPBACK_LOCK:
+        _PENDING_LOOPBACK_LOGINS[state_token] = pending_login
+        _evict_pending_loopback_logins()
+    _ = webbrowser.open(auth_url)
+    return _pending_loopback_response(pending_login)
+
+
+async def _complete_pending_loopback_login(
+    server: asyncio.AbstractServer,
+    callback_future: asyncio.Future[str],
+    *,
+    redirect_uri_override: str | None = None,
+) -> dict[str, Any]:
+    try:
+        redirect_url = await _wait_for_loopback_callback(server, callback_future)
+    except TikTokMCPError as exc:
+        return exc.to_dict()
+    except OSError as exc:
+        return {
+            "error": "oauth_loopback_unavailable",
+            "message": "Could not start OAuth loopback listener.",
+            "context": {"reason": type(exc).__name__},
+        }
+    return await _complete_account_login(
+        redirect_url,
+        redirect_uri_override=redirect_uri_override,
+    )
+
+
+def _pending_loopback_response(pending_login: PendingLoopbackLogin) -> dict[str, Any]:
+    return {
+        "status": "pending",
+        "state": pending_login.state,
+        "url": pending_login.auth_url,
+        "auth_url": pending_login.auth_url,
+        "suggested_alias": pending_login.suggested_alias,
+        "expires_in": _seconds_until(pending_login.expires_at),
+        "poll_with": "poll_loopback_login",
+        "instructions": LOOPBACK_INSTRUCTIONS,
+    }
+
+
+def _active_pending_loopback_on_port(port: int) -> PendingLoopbackLogin | None:
+    for pending_login in _PENDING_LOOPBACK_LOGINS.values():
+        if pending_login.task.done():
+            continue
+        if pending_login.loopback_redirect.port == port:
+            return pending_login
+    return None
+
+
+async def _drop_expired_loopback_logins() -> None:
+    now = datetime.now(UTC)
+    expired: list[PendingLoopbackLogin] = []
+    async with _PENDING_LOOPBACK_LOCK:
+        for state_token, pending_login in list(_PENDING_LOOPBACK_LOGINS.items()):
+            if pending_login.expires_at > now and not pending_login.task.cancelled():
+                continue
+            expired.append(pending_login)
+            _ = _PENDING_LOOPBACK_LOGINS.pop(state_token, None)
+    for pending_login in expired:
+        if not pending_login.task.done():
+            pending_login.task.cancel()
+        pending_login.server.close()
+        await pending_login.server.wait_closed()
+
+
+def _evict_pending_loopback_logins() -> None:
+    while len(_PENDING_LOOPBACK_LOGINS) > _MAX_PENDING_LOOPBACK_LOGINS:
+        oldest_state = min(
+            _PENDING_LOOPBACK_LOGINS,
+            key=lambda key: _PENDING_LOOPBACK_LOGINS[key].created_at,
+        )
+        pending_login = _PENDING_LOOPBACK_LOGINS.pop(oldest_state)
+        if not pending_login.task.done():
+            pending_login.task.cancel()
+        pending_login.server.close()
+
+
+def _seconds_until(expires_at: datetime) -> int:
+    remaining = expires_at - datetime.now(UTC)
+    return max(0, int(remaining.total_seconds()))
+
+
 async def _complete_loopback_login(
     authorization_url: str,
     loopback_redirect: LoopbackRedirect,
@@ -711,8 +946,15 @@ async def _await_loopback_callback(
     authorization_url: str,
     callback_future: asyncio.Future[str],
 ) -> str:
+    _ = webbrowser.open(authorization_url)
+    return await _wait_for_loopback_callback(server, callback_future)
+
+
+async def _wait_for_loopback_callback(
+    server: asyncio.AbstractServer,
+    callback_future: asyncio.Future[str],
+) -> str:
     try:
-        _ = webbrowser.open(authorization_url)
         return await asyncio.wait_for(callback_future, timeout=_LOOPBACK_TIMEOUT_SECONDS)
     except TimeoutError as exc:
         raise TikTokMCPError(
@@ -889,7 +1131,7 @@ async def _load_app_credentials(
         {str(key): value for key, value in payload.items()}
     )
     if not redirect_uri:
-        if api_type in PKCE_APIS:
+        if api_type in LOOPBACK_DEFAULT_APIS:
             redirect_uri = DEFAULT_LOOPBACK_REDIRECT_URI
         else:
             raise TikTokMCPError(
@@ -1231,6 +1473,7 @@ __all__ = [
     "add_account_with_loopback",
     "complete_account_login",
     "list_accounts",
+    "poll_loopback_login",
     "remove_account",
     "rename_account",
 ]

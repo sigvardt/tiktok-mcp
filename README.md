@@ -97,6 +97,13 @@ Setup is done through MCP tools. You do not need to hand-edit token files.
 Account aliases are local names. Tokens and app secrets are never returned by
 normal listing tools; account IDs are exposed only as fingerprints where possible.
 
+If the registered redirect URI is a local loopback URL such as
+`http://localhost:8765/callback`, Claude can use `add_account(...,
+await_callback=true)` or `add_account_with_loopback(...)`. Those tools return a
+`pending` response immediately and Claude should call `poll_loopback_login(state,
+wait_seconds=...)` until the browser redirect is captured. For hosted redirect
+URIs, use the manual paste flow above.
+
 ## OAuth Notes
 
 Each TikTok surface has its own OAuth details:
@@ -107,6 +114,11 @@ Each TikTok surface has its own OAuth details:
 | `content_posting` | TikTok v2 account OAuth with PKCE | `https://open.tiktokapis.com/v2/oauth/token/` |
 | `marketing` | TikTok For Business advertiser authorization | `/open_api/v1.3/oauth2/access_token/` |
 | `business_organic` | TikTok account-holder authorization | `/open_api/v1.3/tt_user/oauth2/token/` |
+
+Stored credentials must include the exact redirect URI registered with TikTok.
+Legacy credentials without a redirect URI only fall back to
+`http://localhost:8765/callback` for the Business API surfaces
+(`business_organic` and `marketing`).
 
 Business Organic comment reads require the TikTok account-holder flow, not the
 Marketing advertiser flow. The default requested scopes are:

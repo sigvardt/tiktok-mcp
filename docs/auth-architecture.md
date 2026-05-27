@@ -2,7 +2,7 @@
 
 This doc describes how `tiktok-mcp` handles authentication and token storage
 for the four supported TikTok APIs. It covers the multi-account model, the
-manual-paste OAuth flow, the in-memory OAuth state manager, the per-API token
+manual-paste and loopback OAuth flows, the in-memory OAuth state manager, the per-API token
 refresh strategy, atomic refresh-token rotation, the concurrency model,
 sandbox isolation, and recovery paths. Symbol references point at the actual
 code in this repository so the docs stay honest as the implementation
@@ -28,12 +28,12 @@ changes the suffix later. Duplicate aliases are rejected with a
 `-1`, `-2` suggestion at onboarding time. The tool surface lives in
 `src/tiktok_mcp/tools/accounts.py`.
 
-## 2. Manual-paste OAuth flow
+## 2. OAuth setup flows
 
-TikTok developer consoles don't accept loopback or IP redirect URIs. They
-require a registered TLD. The MCP therefore never opens an HTTP listener and
-never runs a hosted relay. Instead the user pastes the final redirect URL
-back into Claude.
+The default setup path is manual paste: the MCP returns an authorization URL,
+the user approves TikTok access in the browser, and the user pastes the final
+redirect URL back into Claude. This is the required path for hosted redirect
+URIs because the MCP never runs a hosted relay.
 
 ```mermaid
 sequenceDiagram
@@ -60,8 +60,17 @@ sequenceDiagram
     Claude-->>User: confirmation
 ```
 
-The two entry points are `add_account` and `complete_account_login` in
-`src/tiktok_mcp/tools/accounts.py`. Both sit behind
+For redirect URIs registered as `http://localhost:<port>/...` or
+`http://127.0.0.1:<port>/...`, the MCP can use local loopback capture.
+`add_account(..., await_callback=true)` and `add_account_with_loopback(...)`
+start a local listener, open the browser, and return `{status: "pending"}`
+immediately so MCP clients do not hit single-call timeouts. The client then
+calls `poll_loopback_login(state, wait_seconds=...)` until the listener captures
+the browser callback and stores the account.
+
+The entry points are `add_account`, `complete_account_login`,
+`add_account_with_loopback`, and `poll_loopback_login` in
+`src/tiktok_mcp/tools/accounts.py`. They sit behind
 `TIKTOK_MCP_ALLOW_ACCOUNT_CHANGES`, not behind `TIKTOK_MCP_ALLOW_WRITES`,
 because adding an account doesn't mutate TikTok-side state and the user
 permission profile is different.
