@@ -86,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * auth architecture design doc ([697a49e](https://github.com/sigvardt/tiktok-mcp/commit/697a49e827eddfc1ddd326af318545d186e295cb))
 * **display:** record Display read request shape ([66ad878](https://github.com/sigvardt/tiktok-mcp/commit/66ad8789ab8df03ac9195217e5eb7cf0ea3e211c))
 * **inventory:** enumerate v0.1 API surface across Display, Marketing, Business Organic, Content Posting ([9718d91](https://github.com/sigvardt/tiktok-mcp/commit/9718d91feb41c87a710a6a2296b576be63156335))
-* PyPI + TestPyPI pending-publisher bootstrap runbook ([dd4eb8c](https://github.com/sigvardt/tiktok-mcp/commit/dd4eb8ca4bf59e5e09ab652c6f6a46bee7390c0e))
+* PyPI pending-publisher bootstrap runbook ([dd4eb8c](https://github.com/sigvardt/tiktok-mcp/commit/dd4eb8ca4bf59e5e09ab652c6f6a46bee7390c0e))
 * **readme:** user-facing README with claude_desktop_config examples ([53c0419](https://github.com/sigvardt/tiktok-mcp/commit/53c04199d81be63a06e944535cfaf83af1913e8b))
 * refresh README and scrub examples ([3728d2c](https://github.com/sigvardt/tiktok-mcp/commit/3728d2c09bb686eeb392c086882ad6e94548968e))
 * release runbook + hotfix flow ([3fdfebd](https://github.com/sigvardt/tiktok-mcp/commit/3fdfebda76db2b095eb53bcacd7f5a7d5420dc1e))
@@ -103,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * **plan:** mark F1-F4 wave APPROVE and T42 as BLOCKED EXTERNAL ([b7e68a0](https://github.com/sigvardt/tiktok-mcp/commit/b7e68a04da333a26e92b3ae329adeb8d46cdd1b9))
 * **quality:** document intentional conventions and annotate suppressions for F-wave review ([a5e58c0](https://github.com/sigvardt/tiktok-mcp/commit/a5e58c04bbdb28dda9bd7e71e2269ce6e095fcc6))
-* **spike:** draft Wave-0 S1/S2/S3 spike scripts and TestPyPI release-spike workflow ([99ff3bb](https://github.com/sigvardt/tiktok-mcp/commit/99ff3bb38507dbc0d9bf965a903cf1cc9a79e9d3))
+* **spike:** draft Wave-0 S1/S2/S3 spike scripts and PyPI publish workflow ([99ff3bb](https://github.com/sigvardt/tiktok-mcp/commit/99ff3bb38507dbc0d9bf965a903cf1cc9a79e9d3))
 
 ## [Unreleased]
 

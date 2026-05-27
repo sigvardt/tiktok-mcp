@@ -12,7 +12,7 @@ Audience: the maintainer (you) plus any future co-maintainer with push access an
 - MINOR: new tools, new resources, new opt-in capabilities, additive config knobs.
 - PATCH: bugfixes, dependency bumps that don't change behaviour, doc-only changes that affect the shipped artifact.
 
-Pre-releases use the `-rc.N` suffix (`v0.1.0-rc.1`, `v0.1.0-rc.2`). PyPI normalizes that to `0.1.0rc1` per [PEP 440](https://peps.python.org/pep-0440/); both forms refer to the same artifact.
+Releases are production-only and use final `vX.Y.Z` tags. Do not cut `-rc`, `alpha`, or `beta` tags for this project unless the release workflow is explicitly reworked to handle pre-releases.
 
 The version source is `git`, not a file. [`hatch-vcs`](https://github.com/ofek/hatch-vcs) reads the most recent annotated tag and writes `src/tiktok_mcp/_version.py` at build time. That file is gitignored. Don't edit `__version__` by hand. Don't add a `version = "..."` line to `pyproject.toml`. Both will be overwritten at the next build, and the result will mismatch the tag.
 
@@ -31,20 +31,11 @@ Before tagging anything, walk this list top to bottom. Skipping a step costs mor
    uv run ruff check src/
    ```
 4. **`main` is clean.** `git status` reports a clean working tree, `git rev-parse --abbrev-ref HEAD` reports `main`, and `git pull --ff-only` is a no-op.
-5. **TestPyPI smoke (mandatory).** Don't push a `vX.Y.Z` tag until at least one `vX.Y.Z-rc.N` has shipped to TestPyPI and been smoked. Cut the rc tag:
-   ```sh
-   git tag v0.1.0-rc.1 -m "Release candidate v0.1.0-rc.1"
-   git push origin v0.1.0-rc.1
-   ```
-   Wait for the `release-rc` workflow to finish, then verify:
-   ```sh
-   uvx --index-url https://test.pypi.org/simple/ tiktok-mcp@0.1.0-rc.1 --version
-   ```
-   It must print the version and exit 0. If it doesn't, fix the bug, bump to `-rc.2`, and try again. Never skip straight to a non-rc tag; the production `release.yml` workflow (Wave 5 task T38) is the only live-publish path and it deserves a smoked artifact going in.
+5. **PyPI trusted publisher configured.** Confirm the production PyPI trusted publisher exists for project `tiktok-mcp`, owner `sigvardt`, repository `tiktok-mcp`, workflow `release.yml`, and environment `pypi`.
 
 ## 3. Production release steps
 
-Once the checklist is clean and at least one rc has been smoked on TestPyPI:
+Once the checklist is clean:
 
 1. Sanity sweep one more time:
    ```sh
@@ -121,8 +112,6 @@ First-time setup for trusted publishing. Do this once, before the first ever `vX
    Submit. PyPI now reserves the project name for that exact GitHub workflow + environment combination. Any push from a different repo, branch, or workflow will be rejected by the OIDC verifier.
 3. In GitHub, go to repo Settings -> Environments -> New environment, name it `pypi`. Add protection rules: required reviewers (at least one maintainer), and a deployment-branches policy that matches tag patterns `v*` only. This stops a hijacked main branch from triggering a publish.
 4. Confirm `release.yml` grants `id-token: write` at the **job level only**, never at the workflow level. The OIDC token must be scoped tightly so other jobs in the same workflow can't mint one for unrelated purposes.
-5. Repeat steps 1-3 on TestPyPI at `test.pypi.org/manage/account/publishing/` for the rc workflow. The TestPyPI environment can share the name `pypi` or use a distinct name; Wave 5 task T39 records the operator's exact choice.
-
 The GitHub workflow itself never holds a PyPI API token. The `pypa/gh-action-pypi-publish` action exchanges a GitHub-issued OIDC token for a one-time upload credential at the moment of publish. There is no secret to rotate, no token to leak, and no shared credential between maintainers.
 
 ## 7. CHANGELOG conventions
