@@ -134,6 +134,9 @@ Two header-shape gotchas worth calling out, because they trip people up:
   `Bearer` prefix. See `BusinessAPIClient.request` in
   `src/tiktok_mcp/api/business/client.py`. The source comment flags this
   explicitly.
+- Marketing token-exchange and refresh responses may omit `expires_in`.
+  Those access tokens use TikTok's documented 24-hour lifetime, while
+  `refresh_token_expire_in` still drives the refresh-token expiry timestamp.
 
 ## 6. Atomic refresh-token rotation
 

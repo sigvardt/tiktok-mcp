@@ -52,7 +52,7 @@ from tiktok_mcp.types import (
     OAuthStateInvalidError,
     TikTokMCPError,
 )
-from tiktok_mcp.types.accounts import AccountTokens
+from tiktok_mcp.types.accounts import MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS, AccountTokens
 from tiktok_mcp.types.app_credentials import AppCredentials
 
 DEFAULT_OAUTH_EXPIRES_SECONDS = 600
@@ -1185,11 +1185,11 @@ def _account_record_from_token_payload(
     refresh_value: str | None,
 ) -> tuple[Account, AccountTokens]:
     now = datetime.now(UTC)
-    expires_in = _int_value(payload, "expires_in")
     refresh_expires_in = _first_optional_int_value(
         payload,
         "refresh_expires_in",
         "refresh_token_expires_in",
+        "refresh_token_expire_in",
     )
     account = Account(
         alias=alias,
@@ -1203,7 +1203,7 @@ def _account_record_from_token_payload(
         last_used_at=None,
         status=AccountStatus.OK,
     )
-    access_expires_at = now + timedelta(seconds=expires_in)
+    access_expires_at = _access_token_expires_at(api_type, payload, now)
     refresh_expires_at = (
         now + timedelta(seconds=refresh_expires_in) if refresh_expires_in is not None else None
     )
@@ -1215,6 +1215,19 @@ def _account_record_from_token_payload(
         last_rotated_at=now,
     )
     return account, tokens
+
+
+def _access_token_expires_at(
+    api_type: ApiType,
+    payload: Mapping[str, object],
+    now: datetime,
+) -> datetime:
+    if api_type is ApiType.MARKETING:
+        expires_in = _optional_int_value(payload, "expires_in")
+        if expires_in is None:
+            expires_in = MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS
+        return now + timedelta(seconds=expires_in)
+    return now + timedelta(seconds=_int_value(payload, "expires_in"))
 
 
 def _json_object(response: httpx.Response) -> dict[str, Any]:

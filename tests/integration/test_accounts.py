@@ -38,7 +38,13 @@ from tiktok_mcp.tools.accounts import (
     rename_account,
 )
 from tiktok_mcp.tools.app_credentials import set_app_credentials
-from tiktok_mcp.types.accounts import Account, AccountStatus, AccountTokens, ApiType
+from tiktok_mcp.types.accounts import (
+    MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
+    Account,
+    AccountStatus,
+    AccountTokens,
+    ApiType,
+)
 
 SERVICE_NAME = "tiktok-mcp"
 NOW = datetime(2026, 5, 22, 12, 0, tzinfo=UTC)
@@ -60,6 +66,13 @@ BUSINESS_TOKEN_PAYLOAD: dict[str, object] = {
     "token_type": "Bearer",
     "advertiser_ids": ["test-advertiser-id"],
     "refresh_expires_in": 31536000,
+}
+MARKETING_TOKEN_PAYLOAD_WITHOUT_EXPIRES: dict[str, object] = {
+    "access" + "_token": "synthetic-marketing-access-token",
+    "refresh" + "_token": "synthetic-marketing-refresh-token",
+    "refresh_token_expire_in": 31536000,
+    "advertiser_ids": ["test-advertiser-id"],
+    "scope": ["ad.manage", "report.read"],
 }
 ORGANIC_TOKEN_PAYLOAD: dict[str, object] = {
     "access" + "_token": "synthetic-organic-access-token",
@@ -539,6 +552,81 @@ async def test_business_organic_sandbox_token_exchange_uses_business_oauth_host(
 
 
 @pytest.mark.asyncio
+async def test_marketing_token_exchange_accepts_response_without_expires_in(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.MARKETING)
+    _mock_token_exchange(
+        monkeypatch,
+        {"code": 0, "message": "OK", "data": MARKETING_TOKEN_PAYLOAD_WITHOUT_EXPIRES},
+        assert_request=_assert_marketing_oauth_request,
+    )
+    add_response = await add_account(ApiType.MARKETING, alias="nordic-marketing-token")
+    redirect = _redirect_url("synthetic-business-code", str(add_response["state"]))
+
+    response = await complete_account_login(redirect)
+
+    assert response["alias"] == "nordic-marketing-token"
+    assert response["api_type"] == "marketing"
+    assert response["tiktok_id_fingerprint"] == "test...len=18"
+    stored = await backend.get(account_key(ApiType.MARKETING, False, "nordic-marketing-token"))
+    assert stored is not None
+    account, tokens = deserialize_account_record(stored)
+    assert account.scopes == ["ad.manage", "report.read"]
+    assert tokens.access_token_expires_at - tokens.last_rotated_at == timedelta(
+        seconds=MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS
+    )
+    assert tokens.refresh_token_expires_at is not None
+
+
+@pytest.mark.asyncio
+async def test_marketing_account_appears_in_list_accounts_after_token_exchange(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.MARKETING)
+    _mock_token_exchange(
+        monkeypatch,
+        {"code": 0, "message": "OK", "data": MARKETING_TOKEN_PAYLOAD_WITHOUT_EXPIRES},
+        assert_request=_assert_marketing_oauth_request,
+    )
+    add_response = await add_account(ApiType.MARKETING, alias="nordic-marketing-list")
+    redirect = _redirect_url("synthetic-business-code", str(add_response["state"]))
+    _ = await complete_account_login(redirect)
+
+    response = await list_accounts()
+
+    assert response["count"] == 1
+    assert response["accounts"][0]["alias"] == "nordic-marketing-list"
+    assert response["accounts"][0]["api_type"] == "marketing"
+
+
+@pytest.mark.asyncio
+async def test_display_token_exchange_still_requires_expires_in(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = allow_account_changes
+    display_payload_without_expires = dict(TOKEN_PAYLOAD)
+    display_payload_without_expires.pop("expires_in")
+    await _store_app_credentials(backend, ApiType.DISPLAY)
+    _mock_token_exchange(monkeypatch, display_payload_without_expires)
+    add_response = await add_account(ApiType.DISPLAY, alias="nordic-display-no-expiry")
+    redirect = _redirect_url("synthetic-code", str(add_response["state"]))
+
+    response = await complete_account_login(redirect)
+
+    assert response["error"] == "invalid_redirect_url"
+    assert response["message"] == "Token exchange response is missing integer field expires_in."
+
+
+@pytest.mark.asyncio
 async def test_oauth_error_envelope_surfaced(
     backend: KeyringBackend,
     allow_account_changes: None,
@@ -846,6 +934,18 @@ def _assert_business_oauth_request(request: httpx.Request) -> None:
     payload = json.loads(request.content.decode())
     assert payload == {
         "app_id": "sandbox-client-id",
+        "secret": "test-client-secret",
+        "auth_code": "synthetic-business-code",
+    }
+
+
+def _assert_marketing_oauth_request(request: httpx.Request) -> None:
+    assert request.url.host == "business-api.tiktok.com"
+    assert request.url.path == "/open_api/v1.3/oauth2/access_token/"
+    assert request.headers["Content-Type"].startswith("application/json")
+    payload = json.loads(request.content.decode())
+    assert payload == {
+        "app_id": "test-client-id",
         "secret": "test-client-secret",
         "auth_code": "synthetic-business-code",
     }

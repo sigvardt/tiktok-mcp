@@ -33,6 +33,7 @@ from tiktok_mcp.auth.redactor import register_token as add_runtime_token
 from tiktok_mcp.envelopes import decode_business_response
 from tiktok_mcp.observability.rate_limit_tracker import record_429, record_request
 from tiktok_mcp.types.accounts import (
+    MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
     Account,
     AccountStatus,
     AccountTokens,
@@ -313,13 +314,17 @@ class BusinessAPIClient:
         new_refresh_token = _optional_string(payload, "refresh_token") or refresh_token
 
         now = datetime.now(UTC)
-        access_expires_at = now + timedelta(
-            seconds=_required_int(payload, "expires_in", endpoint=refresh_path)
+        access_expires_at = _access_token_expires_at(
+            self.account.api_type,
+            payload,
+            endpoint=refresh_path,
+            now=now,
         )
         refresh_expires_in = _optional_int(
             payload,
             "refresh_token_expires_in",
             "refresh_expires_in",
+            "refresh_token_expire_in",
             endpoint=refresh_path,
         )
         refresh_expires_at = (
@@ -579,6 +584,21 @@ def _required_int(payload: Mapping[str, Any], key: str, *, endpoint: str) -> int
             context={"endpoint": endpoint},
         )
     return value
+
+
+def _access_token_expires_at(
+    api_type: ApiType,
+    payload: Mapping[str, Any],
+    *,
+    endpoint: str,
+    now: datetime,
+) -> datetime:
+    if api_type is ApiType.MARKETING:
+        expires_in = _optional_int(payload, "expires_in", endpoint=endpoint)
+        if expires_in is None:
+            expires_in = MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS
+        return now + timedelta(seconds=expires_in)
+    return now + timedelta(seconds=_required_int(payload, "expires_in", endpoint=endpoint))
 
 
 def _optional_int(payload: Mapping[str, Any], *keys: str, endpoint: str) -> int | None:

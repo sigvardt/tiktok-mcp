@@ -122,6 +122,10 @@ Sandbox Business API accounts still exchange OAuth codes through
 `business-api.tiktok.com`; the `sandbox` flag only changes the downstream
 Business API resource host used after tokens are stored.
 
+Marketing token responses from TikTok For Business may omit `expires_in`.
+`tiktok-mcp` applies TikTok's documented 24-hour marketing access-token
+lifetime and stores the refresh-token lifetime from `refresh_token_expire_in`.
+
 Business Organic comment reads require the TikTok account-holder flow, not the
 Marketing advertiser flow. The default requested scopes are:
 
