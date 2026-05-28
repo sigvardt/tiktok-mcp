@@ -83,6 +83,15 @@ class KeychainUnavailableError(TikTokMCPError):
         )
 
 
+class StoredCredentialError(TikTokMCPError):
+    def __init__(self, message: str, *, context: ErrorContext | None = None) -> None:
+        super().__init__(
+            code="stored_credential_invalid",
+            message=message,
+            context=context,
+        )
+
+
 class AccountNotFoundError(TikTokMCPError):
     alias: str
     api_type: str | None

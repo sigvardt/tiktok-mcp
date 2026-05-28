@@ -20,6 +20,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from tiktok_mcp.api.business import BusinessAPIClient
+from tiktok_mcp.auth.app_credentials import deserialize_stored_app_credentials
 from tiktok_mcp.auth.http_sanitizer import install_httpx_sanitization, safe_raise_for_status
 from tiktok_mcp.auth.keychain import (
     KeychainBackend,
@@ -28,7 +29,6 @@ from tiktok_mcp.auth.keychain import (
     deserialize_account_record,
     get_backend,
 )
-from tiktok_mcp.auth.redactor import register_token
 from tiktok_mcp.decorators import mark_read_only
 from tiktok_mcp.server import app
 from tiktok_mcp.types.accounts import Account, AccountTokens, ApiType
@@ -36,7 +36,6 @@ from tiktok_mcp.types.app_credentials import AppCredentials
 from tiktok_mcp.types.errors import (
     AccountNotFoundError,
     AppCredentialsNotSetError,
-    KeychainUnavailableError,
 )
 
 ReportType = Literal["BASIC", "AUDIENCE", "PLAYABLE_AD"]
@@ -493,14 +492,7 @@ async def _load_app_credentials(
     raw_credentials = await backend.get(app_creds_key(account.api_type, account.sandbox))
     if raw_credentials is None:
         raise AppCredentialsNotSetError(account.api_type.value, account.sandbox)
-    try:
-        payload = cast(object, json.loads(raw_credentials))
-    except json.JSONDecodeError as exc:
-        raise KeychainUnavailableError("Stored app credentials are not valid JSON.") from exc
-    credentials = AppCredentials.model_validate(payload)
-    register_token(credentials.client_id.get_secret_value(), "client_id")
-    register_token(credentials.client_secret.get_secret_value(), "client_secret")
-    return credentials
+    return deserialize_stored_app_credentials(raw_credentials).credentials
 
 
 __all__ = [

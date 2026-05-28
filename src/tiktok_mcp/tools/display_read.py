@@ -274,7 +274,9 @@ async def display_refresh_token(alias: str) -> dict[str, object]:
     return {
         "alias": alias,
         "refreshed": True,
-        "access_token_expires_at": _datetime_to_json(refreshed_tokens.access_token_expires_at),
+        "access_token_expires_at": _optional_datetime_to_json(
+            refreshed_tokens.access_token_expires_at
+        ),
         "refresh_token_expires_at": _optional_datetime_to_json(
             refreshed_tokens.refresh_token_expires_at,
         ),

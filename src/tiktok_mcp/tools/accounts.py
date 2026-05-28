@@ -52,7 +52,7 @@ from tiktok_mcp.types import (
     OAuthStateInvalidError,
     TikTokMCPError,
 )
-from tiktok_mcp.types.accounts import MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS, AccountTokens
+from tiktok_mcp.types.accounts import AccountTokens
 from tiktok_mcp.types.app_credentials import AppCredentials
 
 DEFAULT_OAUTH_EXPIRES_SECONDS = 600
@@ -1221,11 +1221,11 @@ def _access_token_expires_at(
     api_type: ApiType,
     payload: Mapping[str, object],
     now: datetime,
-) -> datetime:
+) -> datetime | None:
     if api_type is ApiType.MARKETING:
         expires_in = _optional_int_value(payload, "expires_in")
         if expires_in is None:
-            expires_in = MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS
+            return None
         return now + timedelta(seconds=expires_in)
     return now + timedelta(seconds=_int_value(payload, "expires_in"))
 

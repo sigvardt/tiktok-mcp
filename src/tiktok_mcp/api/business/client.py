@@ -33,7 +33,6 @@ from tiktok_mcp.auth.redactor import register_token as add_runtime_token
 from tiktok_mcp.envelopes import decode_business_response
 from tiktok_mcp.observability.rate_limit_tracker import record_429, record_request
 from tiktok_mcp.types.accounts import (
-    MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
     Account,
     AccountStatus,
     AccountTokens,
@@ -592,11 +591,11 @@ def _access_token_expires_at(
     *,
     endpoint: str,
     now: datetime,
-) -> datetime:
+) -> datetime | None:
     if api_type is ApiType.MARKETING:
         expires_in = _optional_int(payload, "expires_in", endpoint=endpoint)
         if expires_in is None:
-            expires_in = MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS
+            return None
         return now + timedelta(seconds=expires_in)
     return now + timedelta(seconds=_required_int(payload, "expires_in", endpoint=endpoint))
 

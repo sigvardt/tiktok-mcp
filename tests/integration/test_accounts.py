@@ -39,7 +39,6 @@ from tiktok_mcp.tools.accounts import (
 )
 from tiktok_mcp.tools.app_credentials import set_app_credentials
 from tiktok_mcp.types.accounts import (
-    MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
     Account,
     AccountStatus,
     AccountTokens,
@@ -69,8 +68,6 @@ BUSINESS_TOKEN_PAYLOAD: dict[str, object] = {
 }
 MARKETING_TOKEN_PAYLOAD_WITHOUT_EXPIRES: dict[str, object] = {
     "access" + "_token": "synthetic-marketing-access-token",
-    "refresh" + "_token": "synthetic-marketing-refresh-token",
-    "refresh_token_expire_in": 31536000,
     "advertiser_ids": ["test-advertiser-id"],
     "scope": ["ad.manage", "report.read"],
 }
@@ -576,10 +573,9 @@ async def test_marketing_token_exchange_accepts_response_without_expires_in(
     assert stored is not None
     account, tokens = deserialize_account_record(stored)
     assert account.scopes == ["ad.manage", "report.read"]
-    assert tokens.access_token_expires_at - tokens.last_rotated_at == timedelta(
-        seconds=MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS
-    )
-    assert tokens.refresh_token_expires_at is not None
+    assert tokens.access_token_expires_at is None
+    assert tokens.refresh_token is None
+    assert tokens.refresh_token_expires_at is None
 
 
 @pytest.mark.asyncio

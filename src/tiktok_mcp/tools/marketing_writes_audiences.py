@@ -11,6 +11,7 @@ from httpx._types import RequestFiles
 from mcp.types import ToolAnnotations
 
 from tiktok_mcp.api.business import BusinessAPIClient
+from tiktok_mcp.auth.app_credentials import deserialize_stored_app_credentials
 from tiktok_mcp.auth.keychain import (
     KeychainBackend,
     account_key,
@@ -18,7 +19,6 @@ from tiktok_mcp.auth.keychain import (
     deserialize_account_record,
     get_backend,
 )
-from tiktok_mcp.auth.redactor import register_token
 from tiktok_mcp.decorators import require_writes_enabled
 from tiktok_mcp.marketing.audience_hashing import (
     HashedAudienceCSVStream,
@@ -32,7 +32,6 @@ from tiktok_mcp.types.app_credentials import AppCredentials
 from tiktok_mcp.types.errors import (
     AccountNotFoundError,
     AppCredentialsNotSetError,
-    KeychainUnavailableError,
 )
 
 CREATE_CUSTOM_AUDIENCE_PATH = "/open_api/v1.3/dmp/custom_audience/create/"
@@ -143,14 +142,7 @@ async def _load_app_credentials(
     raw_credentials = await backend.get(app_creds_key(account.api_type, account.sandbox))
     if raw_credentials is None:
         raise AppCredentialsNotSetError(account.api_type.value, account.sandbox)
-    try:
-        payload = cast(object, json.loads(raw_credentials))
-    except json.JSONDecodeError as exc:
-        raise KeychainUnavailableError("Stored app credentials are not valid JSON.") from exc
-    credentials = AppCredentials.model_validate(payload)
-    register_token(credentials.client_id.get_secret_value(), "client_id")
-    register_token(credentials.client_secret.get_secret_value(), "client_secret")
-    return credentials
+    return deserialize_stored_app_credentials(raw_credentials).credentials
 
 
 def _raw_payload(payload: object) -> dict[str, Any]:

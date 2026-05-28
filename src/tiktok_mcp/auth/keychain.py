@@ -16,11 +16,15 @@ import keyring
 import keyring.errors
 import platformdirs
 from cryptography.fernet import Fernet
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from tiktok_mcp.auth.redactor import register_token
 from tiktok_mcp.types.accounts import Account, AccountTokens, ApiType
-from tiktok_mcp.types.errors import KeychainLockedError, KeychainUnavailableError
+from tiktok_mcp.types.errors import (
+    KeychainLockedError,
+    KeychainUnavailableError,
+    StoredCredentialError,
+)
 
 SERVICE_NAME = "tiktok-mcp"
 CHUNK_THRESHOLD_BYTES = 2_000
@@ -403,9 +407,21 @@ def deserialize_account_record(blob: str) -> tuple[Account, AccountTokens]:
     try:
         payload = cast(object, json.loads(blob))
     except json.JSONDecodeError as exc:
-        raise KeychainUnavailableError("Stored account record is not valid JSON.") from exc
+        raise StoredCredentialError(
+            "Stored account record is not valid JSON.",
+            context={"record_type": "account"},
+        ) from exc
 
-    record = AccountRecord.model_validate(payload)
+    try:
+        record = AccountRecord.model_validate(payload)
+    except ValidationError as exc:
+        raise StoredCredentialError(
+            "Stored account record failed schema validation.",
+            context={
+                "record_type": "account",
+                "details": exc.errors(include_url=False, include_input=False),
+            },
+        ) from exc
     register_token(record.tokens.access_token.get_secret_value(), "access_token")
     if record.tokens.refresh_token is not None:
         register_token(record.tokens.refresh_token.get_secret_value(), "refresh_token")

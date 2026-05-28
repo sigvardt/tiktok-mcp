@@ -434,6 +434,8 @@ class DisplayAPIClient:
 
 
 def _expires_within_refresh_margin(tokens: AccountTokens) -> bool:
+    if tokens.access_token_expires_at is None:
+        return False
     return tokens.access_token_expires_at < datetime.now(UTC) + _REFRESH_MARGIN
 
 

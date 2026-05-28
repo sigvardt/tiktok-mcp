@@ -9,7 +9,6 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 STRICT_MODEL_CONFIG = ConfigDict(frozen=False, extra="forbid")
-MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60
 
 
 def utc_now() -> datetime:
@@ -54,7 +53,7 @@ class AccountTokens(BaseModel):
 
     access_token: SecretStr
     refresh_token: SecretStr | None = None
-    access_token_expires_at: datetime
+    access_token_expires_at: datetime | None = None
     refresh_token_expires_at: datetime | None = None
     last_rotated_at: datetime = Field(default_factory=utc_now)
 
@@ -64,7 +63,7 @@ class AccountWithTokens(Account):
 
     access_token: SecretStr
     refresh_token: SecretStr | None = None
-    access_token_expires_at: datetime
+    access_token_expires_at: datetime | None = None
     refresh_token_expires_at: datetime | None = None
     last_rotated_at: datetime = Field(default_factory=utc_now)
 

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.3 (2026-05-28)
+
+### Bug Fixes
+
+- Marketing keychain reads now accept null `refresh_token`,
+  `refresh_token_expires_at`, and `access_token_expires_at` values; marketing
+  OAuth stores null access-token expiry when TikTok omits `expires_in`.
+- Marketing tools now parse redirect-aware stored app credentials correctly and
+  report stored credential validation failures without masking them as OS
+  keychain availability problems.
+
 ## 0.2.2 (2026-05-28)
 
 ### Bug Fixes

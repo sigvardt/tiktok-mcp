@@ -47,7 +47,7 @@ from tiktok_mcp.tools.marketing_read import (
 )
 from tiktok_mcp.types.accounts import Account, AccountStatus, AccountTokens, ApiType
 from tiktok_mcp.types.app_credentials import AppCredentials
-from tiktok_mcp.types.errors import AccountBrokenError, BusinessApiError, KeychainUnavailableError
+from tiktok_mcp.types.errors import AccountBrokenError, BusinessApiError, StoredCredentialError
 
 NOW = datetime(2026, 5, 22, 12, 0, tzinfo=UTC)
 ALIAS = "marketing-demo"
@@ -114,6 +114,43 @@ async def test_list_advertisers_returns_models_and_uses_access_token(
     }
     assert seen_requests[0].headers["Access-Token"] == "marketing-access"
     assert "authorization" not in seen_requests[0].headers
+
+
+@pytest.mark.asyncio
+async def test_list_advertisers_accepts_redirect_credentials_and_null_marketing_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = MemoryBackend()
+    await _store_app_credentials(backend, redirect_uri="https://www.power.no")
+    await _store_marketing_account(
+        backend,
+        alias=ALIAS,
+        access_token="marketing-access",
+        refresh_token=None,
+        access_expires_at=None,
+    )
+    seen_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(request)
+        return _business_response(
+            request,
+            {"list": [{"advertiser_id": "adv-1", "advertiser_name": "Demo Advertiser"}]},
+        )
+
+    _install_client(monkeypatch, backend, handler)
+
+    result = await marketing_list_advertisers(ALIAS)
+
+    assert result == {
+        "advertisers": [{"advertiser_id": "adv-1", "advertiser_name": "Demo Advertiser"}]
+    }
+    stored = backend.values[account_key(ApiType.MARKETING, False, ALIAS)]
+    _account, tokens = deserialize_account_record(stored)
+    assert tokens.refresh_token is None
+    assert tokens.refresh_token_expires_at is None
+    assert tokens.access_token_expires_at is None
+    assert seen_requests[0].headers["Access-Token"] == "marketing-access"
 
 
 @pytest.mark.asyncio
@@ -499,7 +536,7 @@ async def test_masked_app_credentials_raise_clear_error_and_preserve_account_sta
 
     monkeypatch.setattr(marketing_read_tools, "get_backend", fake_get_backend)
 
-    with pytest.raises(KeychainUnavailableError) as exc_info:
+    with pytest.raises(StoredCredentialError) as exc_info:
         _ = await marketing_list_campaigns(ALIAS, "adv-1")
 
     assert exc_info.value.context["error"] == "app_credentials_masked_or_invalid"
@@ -627,6 +664,7 @@ async def _store_marketing_account(
     access_token: str,
     refresh_token: str | None = None,
     sandbox: bool = False,
+    access_expires_at: datetime | None = NOW + timedelta(hours=1),
 ) -> None:
     account = Account(
         alias=alias,
@@ -643,7 +681,7 @@ async def _store_marketing_account(
     tokens = AccountTokens(
         access_token=SecretStr(access_token),
         refresh_token=SecretStr(refresh_token) if refresh_token is not None else None,
-        access_token_expires_at=NOW + timedelta(hours=1),
+        access_token_expires_at=access_expires_at,
         refresh_token_expires_at=NOW + timedelta(days=30) if refresh_token is not None else None,
         last_rotated_at=NOW,
     )
@@ -653,7 +691,12 @@ async def _store_marketing_account(
     )
 
 
-async def _store_app_credentials(backend: MemoryBackend, *, sandbox: bool = False) -> None:
+async def _store_app_credentials(
+    backend: MemoryBackend,
+    *,
+    sandbox: bool = False,
+    redirect_uri: str | None = None,
+) -> None:
     payload = {
         "api_type": ApiType.MARKETING.value,
         "sandbox": sandbox,
@@ -661,6 +704,8 @@ async def _store_app_credentials(backend: MemoryBackend, *, sandbox: bool = Fals
         "client_secret": "marketing-client-secret",
         "created_at": NOW.isoformat(),
     }
+    if redirect_uri is not None:
+        payload["redirect_uri"] = redirect_uri
     await backend.set(app_creds_key(ApiType.MARKETING, sandbox), json.dumps(payload))
 
 

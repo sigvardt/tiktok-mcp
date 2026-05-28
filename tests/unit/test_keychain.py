@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # pyright: reportMissingTypeStubs=false
+import json
 import logging
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -27,7 +28,7 @@ from tiktok_mcp.auth.keychain import (
     serialize_account_record,
 )
 from tiktok_mcp.types.accounts import Account, AccountStatus, AccountTokens, ApiType
-from tiktok_mcp.types.errors import KeychainUnavailableError
+from tiktok_mcp.types.errors import KeychainUnavailableError, StoredCredentialError
 
 SERVICE_NAME = "tiktok-mcp"
 NOW = datetime(2026, 5, 22, 12, 0, tzinfo=UTC)
@@ -274,6 +275,20 @@ def test_account_record_serialization_redacts_tokens(caplog: pytest.LogCaptureFi
         )
     assert "redaction-access-token-123456" not in caplog.text
     assert "<REDACTED:access_token>" in caplog.text
+
+
+def test_account_record_validation_error_is_not_keychain_unavailable() -> None:
+    account = _make_account()
+    tokens = _make_tokens("redaction-access-token-123456", "redaction-refresh-token-123456")
+    payload = json.loads(serialize_account_record(account, tokens))
+    payload["tokens"]["access_token"] = None
+
+    with pytest.raises(StoredCredentialError) as exc_info:
+        _ = deserialize_account_record(json.dumps(payload))
+
+    assert exc_info.value.code == "stored_credential_invalid"
+    assert "schema validation" in exc_info.value.message
+    assert exc_info.value.context["record_type"] == "account"
 
 
 def _make_account(alias: str = "demo-display", display_name: str = "Demo Display") -> Account:

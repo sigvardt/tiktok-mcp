@@ -15,6 +15,7 @@ from .errors import (
     OAuthHostMismatchError,
     OAuthStateInvalidError,
     RateLimitedError,
+    StoredCredentialError,
     TikTokMCPError,
     WritesDisabledError,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "OAuthStateInvalidError",
     "OAuthTokenResponse",
     "RateLimitedError",
+    "StoredCredentialError",
     "TikTokMCPError",
     "WritesDisabledError",
 ]

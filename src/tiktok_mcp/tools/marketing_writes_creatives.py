@@ -3,16 +3,16 @@
 # pyright: reportMissingImports=false
 from __future__ import annotations
 
-import json
 import mimetypes
 from collections.abc import Mapping
 from pathlib import Path
 from typing import BinaryIO, ClassVar, Literal, cast
 
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from tiktok_mcp.api.business import BusinessAPIClient
+from tiktok_mcp.auth.app_credentials import deserialize_stored_app_credentials
 from tiktok_mcp.auth.keychain import (
     KeychainBackend,
     account_key,
@@ -20,7 +20,6 @@ from tiktok_mcp.auth.keychain import (
     deserialize_account_record,
     get_backend,
 )
-from tiktok_mcp.auth.redactor import register_token
 from tiktok_mcp.decorators import require_writes_enabled
 from tiktok_mcp.envelopes import decode_business_response
 from tiktok_mcp.marketing.asset_chunker import (
@@ -36,7 +35,6 @@ from tiktok_mcp.types.app_credentials import AppCredentials
 from tiktok_mcp.types.errors import (
     AccountNotFoundError,
     AppCredentialsNotSetError,
-    KeychainUnavailableError,
 )
 
 VIDEO_UPLOAD_PATH = "/open_api/v1.3/file/video/ad/upload/"
@@ -284,17 +282,7 @@ async def _load_app_credentials(
     raw_credentials = await backend.get(app_creds_key(ApiType.MARKETING, account.sandbox))
     if raw_credentials is None:
         raise AppCredentialsNotSetError(ApiType.MARKETING.value, account.sandbox)
-    try:
-        payload = cast(object, json.loads(raw_credentials))
-        credentials = AppCredentials.model_validate(payload)
-    except (json.JSONDecodeError, ValidationError) as exc:
-        raise KeychainUnavailableError(
-            "Stored Marketing app credentials are invalid.",
-            context={"api_type": ApiType.MARKETING.value, "sandbox": account.sandbox},
-        ) from exc
-    register_token(credentials.client_id.get_secret_value(), "client_id")
-    register_token(credentials.client_secret.get_secret_value(), "client_secret")
-    return credentials
+    return deserialize_stored_app_credentials(raw_credentials).credentials
 
 
 def _normalize_video_upload_payload(

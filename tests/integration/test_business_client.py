@@ -26,7 +26,6 @@ from tiktok_mcp.auth.keychain import (
 from tiktok_mcp.auth.redactor import SecretRedactor
 from tiktok_mcp.observability.rate_limit_tracker import get_posture, reset_tracker
 from tiktok_mcp.types.accounts import (
-    MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
     Account,
     AccountStatus,
     AccountTokens,
@@ -268,9 +267,7 @@ async def test_marketing_auth_error_uses_advertiser_refresh_endpoint() -> None:
     stored_account, stored_tokens = _stored_record(backend, api_type=ApiType.MARKETING)
     assert stored_account.status is AccountStatus.OK
     assert stored_tokens.access_token.get_secret_value() == "access-token-refreshed"
-    assert stored_tokens.access_token_expires_at - stored_tokens.last_rotated_at == timedelta(
-        seconds=MARKETING_DEFAULT_ACCESS_TOKEN_TTL_SECONDS
-    )
+    assert stored_tokens.access_token_expires_at is None
     assert stored_tokens.refresh_token_expires_at is not None
     assert stored_tokens.refresh_token_expires_at > (datetime.now(UTC) + timedelta(seconds=7100))
 

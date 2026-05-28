@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, TypeVar, cast
 
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from tiktok_mcp.api.business import BusinessAPIClient
 from tiktok_mcp.api.marketing import (
@@ -18,6 +18,7 @@ from tiktok_mcp.api.marketing import (
     BusinessCenter,
     Campaign,
 )
+from tiktok_mcp.auth.app_credentials import deserialize_stored_app_credentials
 from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError
 from tiktok_mcp.auth.keychain import (
     KeychainBackend,
@@ -32,7 +33,7 @@ from tiktok_mcp.types.app_credentials import AppCredentials
 from tiktok_mcp.types.errors import (
     AccountNotFoundError,
     AppCredentialsNotSetError,
-    KeychainUnavailableError,
+    StoredCredentialError,
 )
 
 AD_GET_PATH = "/open_api/v1.3/ad/get/"
@@ -312,16 +313,9 @@ async def _load_app_credentials(
     raw_credentials = await backend.get(app_creds_key(ApiType.MARKETING, account.sandbox))
     if raw_credentials is None:
         raise AppCredentialsNotSetError(ApiType.MARKETING.value, account.sandbox)
-    try:
-        payload = cast(object, json.loads(raw_credentials))
-        credentials = AppCredentials.model_validate(payload)
-    except (json.JSONDecodeError, ValidationError) as exc:
-        raise KeychainUnavailableError(
-            "Stored Marketing app credentials are invalid.",
-            context={"api_type": ApiType.MARKETING.value, "sandbox": account.sandbox},
-        ) from exc
+    credentials = deserialize_stored_app_credentials(raw_credentials).credentials
     if _has_masked_app_credentials(credentials):
-        raise KeychainUnavailableError(
+        raise StoredCredentialError(
             "Stored Marketing app credentials are masked. Run set_app_credentials again.",
             context={
                 "error": "app_credentials_masked_or_invalid",

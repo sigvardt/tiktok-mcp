@@ -16,7 +16,7 @@ from tiktok_mcp.auth.keychain import (
 from tiktok_mcp.server import app
 from tiktok_mcp.types.accounts import Account, AccountTokens, ApiType
 from tiktok_mcp.types.app_credentials import AppCredentials
-from tiktok_mcp.types.errors import KeychainUnavailableError
+from tiktok_mcp.types.errors import KeychainUnavailableError, StoredCredentialError
 
 VALID_API_VALUES = {api.value for api in ApiType}
 
@@ -28,7 +28,7 @@ class AccountResourceEntry(BaseModel):
     api_type: ApiType
     sandbox: bool
     has_valid_token: bool
-    expires_at: datetime
+    expires_at: datetime | None = None
     last_used_at: datetime | None = None
 
     @classmethod
@@ -39,12 +39,13 @@ class AccountResourceEntry(BaseModel):
         now: datetime,
     ) -> AccountResourceEntry:
         access_token = tokens.access_token.get_secret_value()
+        expires_at = tokens.access_token_expires_at
         return cls(
             alias=account.alias,
             api_type=account.api_type,
             sandbox=account.sandbox,
-            has_valid_token=bool(access_token) and tokens.access_token_expires_at > now,
-            expires_at=tokens.access_token_expires_at,
+            has_valid_token=bool(access_token) and (expires_at is None or expires_at > now),
+            expires_at=expires_at,
             last_used_at=account.last_used_at,
         )
 
@@ -90,7 +91,7 @@ async def read_accounts_resource() -> list[dict[str, object]]:
             continue
         try:
             account, tokens = deserialize_account_record(raw_record)
-        except KeychainUnavailableError:
+        except (KeychainUnavailableError, StoredCredentialError):
             continue
         entries.append(AccountResourceEntry.from_account(account, tokens, now))
     return [entry.model_dump(mode="json") for entry in entries]

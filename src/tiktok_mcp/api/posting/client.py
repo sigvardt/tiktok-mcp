@@ -432,6 +432,8 @@ async def _refresh_lock(account: Account) -> asyncio.Lock:
 
 
 def _needs_refresh(tokens: AccountTokens) -> bool:
+    if tokens.access_token_expires_at is None:
+        return False
     return tokens.access_token_expires_at <= datetime.now(UTC) + REFRESH_SKEW
 
 
