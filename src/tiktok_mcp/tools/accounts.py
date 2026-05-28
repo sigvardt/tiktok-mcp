@@ -23,7 +23,7 @@ from tiktok_mcp.api.business.urls import (
     BUSINESS_ACCESS_TOKEN_PATH,
     BUSINESS_AUTH_PATH,
     BUSINESS_TT_USER_TOKEN_PATH,
-    business_url,
+    business_oauth_url,
 )
 from tiktok_mcp.auth import state
 from tiktok_mcp.auth.http_sanitizer import SanitizedHttpxError, safe_raise_for_status
@@ -99,7 +99,6 @@ ORGANIC_ACCOUNT_SCOPES = (
     "comment.list.manage",
 )
 PKCE_APIS = frozenset({ApiType.DISPLAY, ApiType.CONTENT_POSTING})
-LOOPBACK_DEFAULT_APIS = frozenset({ApiType.BUSINESS_ORGANIC, ApiType.MARKETING})
 _PKCE_VERIFIER_CHARS = string.ascii_letters + string.digits + "-._~"
 _TIKTOK_PKCE_VERIFIER_LENGTH = 64
 _PENDING_REMOVALS: dict[str, tuple[str, datetime]] = {}
@@ -555,7 +554,7 @@ def _build_authorization_url(
         "state": state_token,
         "redirect_uri": loaded_credentials.redirect_uri,
     }
-    auth_url = business_url(BUSINESS_AUTH_PATH, sandbox=credentials.sandbox)
+    auth_url = business_oauth_url(BUSINESS_AUTH_PATH)
     return f"{auth_url}?{urllib.parse.urlencode(params)}"
 
 
@@ -598,7 +597,7 @@ async def _exchange_code_for_tokens(
             "auth_code": code,
             "redirect_uri": effective_redirect_uri,
         }
-        token_url = business_url(BUSINESS_TT_USER_TOKEN_PATH, sandbox=credentials.sandbox)
+        token_url = business_oauth_url(BUSINESS_TT_USER_TOKEN_PATH)
         async with _build_http_client() as client:
             response = await client.post(token_url, json=body)
         await safe_raise_for_status(response)
@@ -624,7 +623,7 @@ async def _exchange_code_for_tokens(
         "secret": credentials.client_secret.get_secret_value(),
         "auth_code": code,
     }
-    token_url = business_url(BUSINESS_ACCESS_TOKEN_PATH, sandbox=credentials.sandbox)
+    token_url = business_oauth_url(BUSINESS_ACCESS_TOKEN_PATH)
     async with _build_http_client() as client:
         response = await client.post(token_url, json=body)
     await safe_raise_for_status(response)
@@ -1131,18 +1130,15 @@ async def _load_app_credentials(
         {str(key): value for key, value in payload.items()}
     )
     if not redirect_uri:
-        if api_type in LOOPBACK_DEFAULT_APIS:
-            redirect_uri = DEFAULT_LOOPBACK_REDIRECT_URI
-        else:
-            raise TikTokMCPError(
-                "redirect_uri_not_set",
-                (
-                    f"App credentials exist for api_type={api_type.value} but no redirect_uri "
-                    "is registered. Re-run set_app_credentials with redirect_uri set to the "
-                    "exact URL registered in TikTok's developer console."
-                ),
-                {"api_type": api_type.value, "sandbox": sandbox},
-            )
+        raise TikTokMCPError(
+            "redirect_uri_not_set",
+            (
+                f"App credentials exist for api_type={api_type.value} but no redirect_uri "
+                "is registered. Re-run set_app_credentials with redirect_uri set to the "
+                "exact URL registered in TikTok's developer console."
+            ),
+            {"api_type": api_type.value, "sandbox": sandbox},
+        )
     try:
         credentials = AppCredentials.model_validate(credentials_payload)
     except ValidationError:

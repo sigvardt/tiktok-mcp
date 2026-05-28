@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 import tiktok_mcp.auth.keychain as keychain_module
-from tiktok_mcp.api.business.urls import BUSINESS_ACCESS_TOKEN_PATH, business_url
+from tiktok_mcp.api.business.urls import BUSINESS_ACCESS_TOKEN_PATH, business_oauth_url
 from tiktok_mcp.auth.keychain import app_creds_key
 from tiktok_mcp.tools import app_credentials as app_credentials_tools
 from tiktok_mcp.tools.app_credentials import (
@@ -20,8 +20,8 @@ from tiktok_mcp.tools.app_credentials import (
 from tiktok_mcp.types.accounts import ApiType
 
 DISPLAY_VERIFY_URL = "https://open.tiktokapis.com/v2/oauth/token/"
-BUSINESS_VERIFY_URL = business_url(BUSINESS_ACCESS_TOKEN_PATH, sandbox=False)
-BUSINESS_SANDBOX_VERIFY_URL = business_url(BUSINESS_ACCESS_TOKEN_PATH, sandbox=True)
+BUSINESS_VERIFY_URL = business_oauth_url(BUSINESS_ACCESS_TOKEN_PATH)
+BUSINESS_SANDBOX_VERIFY_URL = BUSINESS_VERIFY_URL
 SECRET_MARKER = "hunter2_marker_secret_xyz"
 
 
@@ -304,7 +304,7 @@ async def test_verify_marketing_invalid_auth_code_probe_is_valid(
 
 
 @pytest.mark.asyncio
-async def test_verify_marketing_sandbox_uses_sandbox_host(
+async def test_verify_marketing_sandbox_uses_business_oauth_host(
     memory_backend: MemoryBackend,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

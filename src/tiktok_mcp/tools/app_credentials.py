@@ -12,7 +12,7 @@ import httpx
 from mcp.types import ToolAnnotations
 from pydantic import SecretStr
 
-from tiktok_mcp.api.business.urls import BUSINESS_ACCESS_TOKEN_PATH, business_url
+from tiktok_mcp.api.business.urls import BUSINESS_ACCESS_TOKEN_PATH, business_oauth_url
 from tiktok_mcp.auth.keychain import app_creds_key, get_backend
 from tiktok_mcp.auth.redactor import register_token
 from tiktok_mcp.decorators import mark_read_only, require_account_changes_enabled
@@ -244,7 +244,7 @@ async def _post_verification_probe(
         )
 
     return await client.post(
-        business_url(BUSINESS_ACCESS_TOKEN_PATH, sandbox=credentials.sandbox),
+        business_oauth_url(BUSINESS_ACCESS_TOKEN_PATH),
         data={
             "app_id": credentials.client_id.get_secret_value(),
             "secret": _secret_value(credentials),

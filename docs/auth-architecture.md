@@ -210,6 +210,14 @@ sequenceDiagram
 when the user wants sandbox; there is no silent fallback from production
 to sandbox or vice versa.
 
+OAuth routing is deliberately separate from resource routing for Business API
+surfaces. Marketing and Business Organic sandbox accounts still build
+authorization URLs and exchange OAuth codes against `business-api.tiktok.com`
+(`/portal/auth`, `/open_api/v1.3/oauth2/access_token/`, and
+`/open_api/v1.3/tt_user/oauth2/token/`). After onboarding, the stored account's
+`sandbox` flag controls whether Business API resource calls use the sandbox or
+production resource base URL.
+
 ## 9. Recovery paths
 
 - Locked keychain at startup. `get_backend` catches the locked-keychain

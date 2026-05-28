@@ -268,7 +268,7 @@ async def test_add_account_reports_redirect_uri_not_set_for_legacy_content_posti
 
 
 @pytest.mark.asyncio
-async def test_add_account_uses_loopback_default_for_legacy_business_organic_credentials(
+async def test_add_account_reports_redirect_uri_not_set_for_legacy_business_organic_credentials(
     backend: KeyringBackend,
     allow_account_changes: None,
 ) -> None:
@@ -280,14 +280,12 @@ async def test_add_account_uses_loopback_default_for_legacy_business_organic_cre
         alias="nordic-organic-legacy",
     )
 
-    assert "error" not in response
-    parsed_url = urllib.parse.urlparse(response["url"])
-    params = urllib.parse.parse_qs(parsed_url.query)
-    assert params["redirect_uri"] == [accounts_module.DEFAULT_LOOPBACK_REDIRECT_URI]
+    assert response["error"] == "redirect_uri_not_set"
+    assert response["context"] == {"api_type": "business_organic", "sandbox": False}
 
 
 @pytest.mark.asyncio
-async def test_add_account_uses_loopback_default_for_legacy_marketing_credentials(
+async def test_add_account_reports_redirect_uri_not_set_for_legacy_marketing_credentials(
     backend: KeyringBackend,
     allow_account_changes: None,
 ) -> None:
@@ -299,11 +297,8 @@ async def test_add_account_uses_loopback_default_for_legacy_marketing_credential
         alias="nordic-marketing-legacy",
     )
 
-    assert "error" not in response
-    parsed_url = urllib.parse.urlparse(response["url"])
-    params = urllib.parse.parse_qs(parsed_url.query)
-    assert parsed_url.netloc == "business-api.tiktok.com"
-    assert params["redirect_uri"] == [accounts_module.DEFAULT_LOOPBACK_REDIRECT_URI]
+    assert response["error"] == "redirect_uri_not_set"
+    assert response["context"] == {"api_type": "marketing", "sandbox": False}
 
 
 @pytest.mark.asyncio
@@ -514,6 +509,36 @@ async def test_business_organic_token_exchange_uses_tt_user_endpoint(
 
 
 @pytest.mark.asyncio
+async def test_business_organic_sandbox_token_exchange_uses_business_oauth_host(
+    backend: KeyringBackend,
+    allow_account_changes: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = allow_account_changes
+    await _store_app_credentials(backend, ApiType.BUSINESS_ORGANIC, sandbox=True)
+    _mock_token_exchange(
+        monkeypatch,
+        {"code": 0, "data": ORGANIC_TOKEN_PAYLOAD},
+        assert_request=_assert_business_organic_oauth_request,
+    )
+    add_response = await add_account(
+        ApiType.BUSINESS_ORGANIC,
+        alias="nordic-comments-sandbox-token",
+        sandbox=True,
+    )
+    redirect = _redirect_url("synthetic-organic-code", str(add_response["state"]))
+
+    response = await complete_account_login(redirect)
+
+    assert response["alias"] == "nordic-comments-sandbox-token"
+    assert response["api_type"] == "business_organic"
+    assert response["sandbox"] is True
+    assert await backend.get(
+        account_key(ApiType.BUSINESS_ORGANIC, True, "nordic-comments-sandbox-token")
+    )
+
+
+@pytest.mark.asyncio
 async def test_oauth_error_envelope_surfaced(
     backend: KeyringBackend,
     allow_account_changes: None,
@@ -692,6 +717,8 @@ async def test_add_account_with_loopback_business_happy_path(
     assert poll_response["api_type"] == "marketing"
     assert poll_response["sandbox"] is True
     assert response["instructions"] == LOOPBACK_INSTRUCTIONS
+    assert parsed_auth_url.netloc == "business-api.tiktok.com"
+    assert parsed_auth_url.path == "/portal/auth"
     assert params["app_id"] == ["sandbox-client-id"]
     assert params["redirect_uri"] == [f"http://localhost:{unused_tcp_port}/callback"]
     assert "scope" not in params
@@ -813,7 +840,8 @@ async def test_add_account_with_loopback_falls_back_to_manual_url_when_port_busy
 
 
 def _assert_business_oauth_request(request: httpx.Request) -> None:
-    assert request.url.host == "sandbox-ads.tiktok.com"
+    assert request.url.host == "business-api.tiktok.com"
+    assert request.url.path == "/open_api/v1.3/oauth2/access_token/"
     assert request.headers["Content-Type"].startswith("application/json")
     payload = json.loads(request.content.decode())
     assert payload == {

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.1 (2026-05-28)
+
+### Bug Fixes
+
+- Route Marketing and Business Organic OAuth authorization, token exchange, and credential probes through `business-api.tiktok.com` even for sandbox accounts.
+- Require an explicit `redirect_uri` on stored app credentials for every API surface, including Business API surfaces, so onboarding cannot silently use an unregistered localhost redirect.
+
 ## 0.2.0 (2026-05-27)
 
 ### Features

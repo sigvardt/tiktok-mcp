@@ -22,6 +22,13 @@ def business_url(path: str, *, sandbox: bool) -> str:
     return f"{business_base_url(sandbox)}{path}"
 
 
+def business_oauth_url(path: str) -> str:
+    if not path.startswith("/"):
+        msg = "Business API OAuth paths must start with '/'."
+        raise ValueError(msg)
+    return f"{BUSINESS_PROD_URL}{path}"
+
+
 __all__ = [
     "BUSINESS_ACCESS_TOKEN_PATH",
     "BUSINESS_API_BASE",
@@ -32,5 +39,6 @@ __all__ = [
     "BUSINESS_TT_USER_REFRESH_TOKEN_PATH",
     "BUSINESS_TT_USER_TOKEN_PATH",
     "business_base_url",
+    "business_oauth_url",
     "business_url",
 ]

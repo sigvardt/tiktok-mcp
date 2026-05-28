@@ -112,13 +112,15 @@ Each TikTok surface has its own OAuth details:
 | --- | --- | --- |
 | `display` | TikTok v2 account OAuth with PKCE | `https://open.tiktokapis.com/v2/oauth/token/` |
 | `content_posting` | TikTok v2 account OAuth with PKCE | `https://open.tiktokapis.com/v2/oauth/token/` |
-| `marketing` | TikTok For Business advertiser authorization | `/open_api/v1.3/oauth2/access_token/` |
-| `business_organic` | TikTok account-holder authorization | `/open_api/v1.3/tt_user/oauth2/token/` |
+| `marketing` | TikTok For Business advertiser authorization | `https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/` |
+| `business_organic` | TikTok account-holder authorization | `https://business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/token/` |
 
 Stored credentials must include the exact redirect URI registered with TikTok.
-Legacy credentials without a redirect URI only fall back to
-`http://localhost:8765/callback` for the Business API surfaces
-(`business_organic` and `marketing`).
+Legacy credentials without a redirect URI must be re-saved with
+`set_app_credentials(..., redirect_uri=...)` before account onboarding.
+Sandbox Business API accounts still exchange OAuth codes through
+`business-api.tiktok.com`; the `sandbox` flag only changes the downstream
+Business API resource host used after tokens are stored.
 
 Business Organic comment reads require the TikTok account-holder flow, not the
 Marketing advertiser flow. The default requested scopes are:
