@@ -112,8 +112,8 @@ Each TikTok surface has its own OAuth details:
 | --- | --- | --- |
 | `display` | TikTok v2 account OAuth with PKCE | `https://open.tiktokapis.com/v2/oauth/token/` |
 | `content_posting` | TikTok v2 account OAuth with PKCE | `https://open.tiktokapis.com/v2/oauth/token/` |
-| `marketing` | TikTok For Business advertiser authorization | `https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/` |
-| `business_organic` | TikTok account-holder authorization | `https://business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/token/` |
+| `marketing` | TikTok For Business advertiser authorization | `business-api.tiktok.com` + `/open_api/v1.3/oauth2/access_token/` |
+| `business_organic` | TikTok account-holder authorization | `business-api.tiktok.com` + `/open_api/v1.3/tt_user/oauth2/token/` |
 
 Stored credentials must include the exact redirect URI registered with TikTok.
 Legacy credentials without a redirect URI must be re-saved with
