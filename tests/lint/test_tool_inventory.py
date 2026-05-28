@@ -10,8 +10,6 @@ exceptions that are part of the v0.1 contract:
   read-only report tools.
 - ``init_video_upload`` and ``finalize_video_upload`` are write tools in the
   posting upload flow.
-- ``get_publish_status`` is INTENTIONAL: it is write-gated even though it
-  begins with ``get_`` because ``publish`` is a write fragment.
 
 Plan coverage uses the plan's blocked evidence lines. Some tasks spell the
 blocked case as ``Expected Result: ... writes_disabled`` while others use the
@@ -60,7 +58,7 @@ WRITE_PREFIXES = (
     "init",
     "finalize",
 )
-WRITE_NAME_EXCEPTIONS = {"get_publish_status"}
+WRITE_NAME_EXCEPTIONS: set[str] = set()
 ACCOUNT_CHANGE_NAMES = {
     "add_account",
     "add_account_with_loopback",
@@ -157,7 +155,7 @@ def _is_write_name(name: str) -> bool:
     body = _tool_name_body(name)
     return (
         _has_action_prefix(body, WRITE_PREFIXES)
-        or "publish" in body
+        or (name != "get_publish_status" and "publish" in body)
         or name in WRITE_NAME_EXCEPTIONS
     )
 

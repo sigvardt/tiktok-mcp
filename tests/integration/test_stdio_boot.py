@@ -259,6 +259,9 @@ def _assert_tools_complete_and_well_formed(tools: list[JsonObject]) -> None:
         destructive_hint = annotations.get("destructiveHint") is True
         assert read_only_hint != destructive_hint, (name, annotations)
 
+        if name == "get_publish_status":
+            assert read_only_hint, f"{name} should advertise readOnlyHint=True"
+            continue
         if any(fragment in name for fragment in DESTRUCTIVE_NAME_FRAGMENTS):
             assert destructive_hint, f"{name} should advertise destructiveHint=True"
         elif any(fragment in name for fragment in READ_ONLY_NAME_FRAGMENTS):

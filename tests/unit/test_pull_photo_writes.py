@@ -190,19 +190,15 @@ async def test_photo_urls_build_nested_image_url_array(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_get_publish_status_uses_cached_alias_once(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakePostingClient(status="FETCH_IN_PROGRESS")
-    monkeypatch.setenv("TIKTOK_MCP_ALLOW_WRITES", "posting")
-    monkeypatch.setenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", "")
+    monkeypatch.delenv("TIKTOK_MCP_ALLOW_WRITES", raising=False)
+    monkeypatch.delenv("TIKTOK_MCP_LIVE_ACCOUNT_SAFETY", raising=False)
     monkeypatch.setattr(posting_tools, "_build_posting_client", lambda: fake_client)
-    init_result = cast(dict[str, object], await upload_video_from_url(ALIAS, VIDEO_URL))
-    assert init_result["publish_id"] == "publish-123"
+    await posting_tools._remember_publish_alias("publish-123", ALIAS)
 
     result = cast(dict[str, object], await get_publish_status("publish-123"))
 
     assert result["status"] == "FETCH_IN_PROGRESS"
-    assert [request[2] for request in fake_client.requests] == [
-        INBOX_VIDEO_INIT_PATH,
-        POST_STATUS_PATH,
-    ]
+    assert [request[2] for request in fake_client.requests] == [POST_STATUS_PATH]
 
 
 @pytest.mark.asyncio
@@ -289,9 +285,12 @@ async def test_cancel_publish_skips_cancel_when_already_terminal(
 
 
 def test_tool_markers_are_destructive() -> None:
-    tools = [upload_video_from_url, upload_photo_from_urls, get_publish_status, cancel_publish]
+    tools = [upload_video_from_url, upload_photo_from_urls, cancel_publish]
     assert all(getattr(tool, "__tiktok_mcp_destructive__", False) for tool in tools)
     assert all(getattr(tool, "__tiktok_mcp_write_api__", None) == "posting" for tool in tools)
+    assert getattr(get_publish_status, "__tiktok_mcp_read_only__", False) is True
+    assert getattr(get_publish_status, "__tiktok_mcp_destructive__", False) is False
+    assert getattr(get_publish_status, "__tiktok_mcp_write_api__", None) is None
 
 
 class FakePostingClient:

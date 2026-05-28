@@ -53,7 +53,7 @@ _WRITE_PREFIXES = (
     "init_",
     "finalize_",
 )
-_WRITE_NAME_EXCEPTIONS = frozenset({"get_publish_status"})
+_WRITE_NAME_EXCEPTIONS = frozenset[str]()
 _ACCOUNT_CHANGE_NAMES = frozenset(
     {
         "add_account",

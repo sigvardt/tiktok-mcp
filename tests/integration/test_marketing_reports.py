@@ -15,6 +15,7 @@ from pydantic import SecretStr, ValidationError
 from tiktok_mcp.api.business import BusinessAPIClient
 from tiktok_mcp.tools import marketing_reports as marketing_reports_tools
 from tiktok_mcp.tools.marketing_reports import (
+    ADVERTISER_INFO_PATH,
     ASYNC_REPORT_CHECK_PATH,
     ASYNC_REPORT_CREATE_PATH,
     SYNC_REPORT_PATH,
@@ -85,6 +86,8 @@ async def test_sync_report_rejects_rows_missing_currency_or_timezone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == ADVERTISER_INFO_PATH:
+            return _business_response(request, {"list": []})
         return _business_response(request, {"list": [{"ad_id": "ad-1", "spend": "1.00"}]})
 
     requests = _install_business_client(monkeypatch, handler)
@@ -101,7 +104,116 @@ async def test_sync_report_rejects_rows_missing_currency_or_timezone(
             "2026-05-07",
         )
 
+    assert [request.url.path for request in requests] == [SYNC_REPORT_PATH, ADVERTISER_INFO_PATH]
+
+
+@pytest.mark.asyncio
+async def test_sync_report_enriches_missing_currency_and_timezone_from_advertiser_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SYNC_REPORT_PATH:
+            return _business_response(
+                request,
+                {
+                    "list": [
+                        {
+                            "dimensions": {"advertiser_id": ADVERTISER_ID},
+                            "metrics": {
+                                "spend": "12.34",
+                                "impressions": "1000",
+                            },
+                        }
+                    ],
+                    "page_info": {"page": 1, "page_size": 20, "total_number": 1},
+                },
+            )
+
+        assert request.url.path == ADVERTISER_INFO_PATH
+        assert json.loads(request.url.params["advertiser_ids"]) == [ADVERTISER_ID]
+        assert json.loads(request.url.params["fields"]) == [
+            "advertiser_id",
+            "currency",
+            "display_timezone",
+            "timezone",
+        ]
+        return _business_response(
+            request,
+            {
+                "list": [
+                    {
+                        "advertiser_id": ADVERTISER_ID,
+                        "currency": "DKK",
+                        "display_timezone": "Europe/Copenhagen",
+                    }
+                ]
+            },
+        )
+
+    requests = _install_business_client(monkeypatch, handler)
+
+    response = await marketing_run_sync_report(
+        ALIAS,
+        ADVERTISER_ID,
+        "BASIC",
+        "AUCTION_ADVERTISER",
+        ["advertiser_id"],
+        ["spend", "impressions"],
+        "2026-05-21",
+        "2026-05-27",
+    )
+
+    rows = cast(list[dict[str, object]], response["list"])
+    assert [request.url.path for request in requests] == [SYNC_REPORT_PATH, ADVERTISER_INFO_PATH]
+    assert rows == [
+        {
+            "dimensions": {"advertiser_id": ADVERTISER_ID},
+            "metrics": {"spend": "12.34", "impressions": "1000"},
+            "currency_code": "DKK",
+            "timezone": "Europe/Copenhagen",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_report_accepts_tiktok_currency_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == SYNC_REPORT_PATH
+        return _business_response(
+            request,
+            {
+                "list": [
+                    {
+                        "dimensions": {"advertiser_id": ADVERTISER_ID},
+                        "metrics": {
+                            "spend": "12.34",
+                            "currency": "DKK",
+                            "timezone": "Europe/Copenhagen",
+                        },
+                    }
+                ],
+            },
+        )
+
+    requests = _install_business_client(monkeypatch, handler)
+
+    response = await marketing_run_sync_report(
+        ALIAS,
+        ADVERTISER_ID,
+        "BASIC",
+        "AUCTION_ADVERTISER",
+        ["advertiser_id"],
+        ["spend", "currency", "timezone"],
+        "2026-05-21",
+        "2026-05-27",
+    )
+
+    rows = cast(list[dict[str, object]], response["list"])
     assert len(requests) == 1
+    assert rows[0]["currency_code"] == "DKK"
+    assert rows[0]["timezone"] == "Europe/Copenhagen"
 
 
 @pytest.mark.asyncio

@@ -234,9 +234,8 @@ async def upload_photo_from_urls(
     return payload
 
 
-@app.tool(annotations=ToolAnnotations(destructiveHint=True))
+@app.tool(annotations=ToolAnnotations(readOnlyHint=True))
 @mark_read_only
-@require_writes_enabled("posting")
 async def get_publish_status(publish_id: str) -> JsonObject:
     """Fetch the current Content Posting status once; this is not a polling loop."""
     try:

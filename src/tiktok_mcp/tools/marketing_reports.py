@@ -11,7 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import ClassVar, Literal, Self, cast
 
@@ -49,6 +49,7 @@ JsonObject = dict[str, object]
 ReportFilter = JsonObject
 
 SYNC_REPORT_PATH = "/open_api/v1.3/report/integrated/get/"
+ADVERTISER_INFO_PATH = "/open_api/v1.3/advertiser/info/"
 ASYNC_REPORT_CREATE_PATH = "/open_api/v1.3/report/task/create/"
 ASYNC_REPORT_CHECK_PATH = "/open_api/v1.3/report/task/check/"
 DEFAULT_MAX_DATE_RANGE_DAYS = 30
@@ -141,7 +142,11 @@ async def marketing_run_sync_report(
             JsonObject,
             await client.get(SYNC_REPORT_PATH, params=_report_query_params(params)),
         )
-    return _report_payload_with_explicit_currency_timezone(payload)
+        return await _sync_report_payload_with_explicit_currency_timezone(
+            client,
+            params.advertiser_id,
+            payload,
+        )
 
 
 @app.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -296,13 +301,22 @@ def _report_query_params(params: MarketingReportParams) -> dict[str, str | int]:
     return query_params
 
 
-def _report_payload_with_explicit_currency_timezone(payload: JsonObject) -> JsonObject:
+async def _sync_report_payload_with_explicit_currency_timezone(
+    client: BusinessAPIClient,
+    advertiser_id: str,
+    payload: JsonObject,
+) -> JsonObject:
     rows_key, rows = _extract_report_rows(payload)
     if rows_key is None:
         return payload
 
+    fallback = (
+        await _advertiser_currency_timezone(client, advertiser_id)
+        if _rows_missing_currency_timezone(rows, payload)
+        else {}
+    )
     enriched_payload = dict(payload)
-    enriched_payload[rows_key] = _rows_with_explicit_currency_timezone(rows, payload)
+    enriched_payload[rows_key] = _rows_with_explicit_currency_timezone(rows, payload, fallback)
     return enriched_payload
 
 
@@ -325,28 +339,18 @@ def _extract_report_rows(payload: Mapping[str, object]) -> tuple[str | None, lis
 def _rows_with_explicit_currency_timezone(
     rows: list[JsonObject],
     payload: Mapping[str, object],
+    fallback: Mapping[str, object] | None = None,
 ) -> list[JsonObject]:
-    return [_row_with_explicit_currency_timezone(row, payload) for row in rows]
+    fallback_values = {} if fallback is None else fallback
+    return [_row_with_explicit_currency_timezone(row, payload, fallback_values) for row in rows]
 
 
 def _row_with_explicit_currency_timezone(
     row: Mapping[str, object],
     payload: Mapping[str, object],
+    fallback: Mapping[str, object],
 ) -> JsonObject:
-    currency_code = _field_value(row, "currency_code")
-    timezone = _field_value(row, "timezone")
-    metrics = row.get("metrics")
-    if isinstance(metrics, dict):
-        metric_values = _object_mapping_to_json_object(cast(dict[object, object], metrics))
-        if currency_code is None:
-            currency_code = _field_value(metric_values, "currency_code")
-        if timezone is None:
-            timezone = _field_value(metric_values, "timezone")
-
-    if currency_code is None:
-        currency_code = _field_value(payload, "currency_code")
-    if timezone is None:
-        timezone = _field_value(payload, "timezone")
+    currency_code, timezone = _currency_timezone_for_row(row, payload, fallback)
 
     missing_fields = [
         field_name
@@ -362,9 +366,104 @@ def _row_with_explicit_currency_timezone(
     return enriched_row
 
 
-def _field_value(mapping: Mapping[str, object], key: str) -> object | None:
-    value = mapping.get(key)
-    return value if value is not None else None
+def _rows_missing_currency_timezone(
+    rows: list[JsonObject],
+    payload: Mapping[str, object],
+) -> bool:
+    return any(
+        currency_code is None or timezone is None
+        for currency_code, timezone in (
+            _currency_timezone_for_row(row, payload, {}) for row in rows
+        )
+    )
+
+
+def _currency_timezone_for_row(
+    row: Mapping[str, object],
+    payload: Mapping[str, object],
+    fallback: Mapping[str, object],
+) -> tuple[object | None, object | None]:
+    currency_code = _field_value(row, "currency_code", "currency")
+    timezone = _field_value(row, "timezone", "display_timezone")
+
+    for nested_key in ("metrics", "dimensions"):
+        nested = row.get(nested_key)
+        if not isinstance(nested, dict):
+            continue
+        nested_values = _object_mapping_to_json_object(cast(dict[object, object], nested))
+        if currency_code is None:
+            currency_code = _field_value(nested_values, "currency_code", "currency")
+        if timezone is None:
+            timezone = _field_value(nested_values, "timezone", "display_timezone")
+
+    if currency_code is None:
+        currency_code = _field_value(payload, "currency_code", "currency")
+    if timezone is None:
+        timezone = _field_value(payload, "timezone", "display_timezone")
+    if currency_code is None:
+        currency_code = _field_value(fallback, "currency_code", "currency")
+    if timezone is None:
+        timezone = _field_value(fallback, "timezone", "display_timezone")
+    return currency_code, timezone
+
+
+async def _advertiser_currency_timezone(
+    client: BusinessAPIClient,
+    advertiser_id: str,
+) -> JsonObject:
+    payload = cast(
+        JsonObject,
+        await client.get(
+            ADVERTISER_INFO_PATH,
+            params={
+                "advertiser_ids": _json_array([advertiser_id]),
+                "fields": _json_array(
+                    [
+                        "advertiser_id",
+                        "currency",
+                        "display_timezone",
+                        "timezone",
+                    ]
+                ),
+            },
+        ),
+    )
+    advertiser = _first_matching_advertiser(payload, advertiser_id)
+    if advertiser is None:
+        return {}
+    return {
+        "currency_code": _field_value(advertiser, "currency_code", "currency"),
+        "timezone": _field_value(advertiser, "timezone", "display_timezone"),
+    }
+
+
+def _first_matching_advertiser(
+    payload: Mapping[str, object],
+    advertiser_id: str,
+) -> JsonObject | None:
+    for field_name in ("list", "advertisers", "advertiser_info"):
+        raw_values = payload.get(field_name)
+        if not isinstance(raw_values, list):
+            continue
+        for raw_value in raw_values:
+            if not isinstance(raw_value, dict):
+                continue
+            advertiser = _object_mapping_to_json_object(cast(dict[object, object], raw_value))
+            if _field_value(advertiser, "advertiser_id") in (advertiser_id, None):
+                return advertiser
+    return None
+
+
+def _json_array(values: Sequence[str]) -> str:
+    return json.dumps(list(values), separators=(",", ":"))
+
+
+def _field_value(mapping: Mapping[str, object], *keys: str) -> object | None:
+    for key in keys:
+        value = mapping.get(key)
+        if value is not None:
+            return value
+    return None
 
 
 def _object_mapping_to_json_object(mapping: Mapping[object, object]) -> JsonObject:
@@ -453,13 +552,16 @@ def _parse_csv_rows(csv_text: str) -> list[JsonObject]:
 
 
 def _single_currency_timezone(rows: list[JsonObject]) -> tuple[object | None, object | None]:
-    return _single_row_value(rows, "currency_code"), _single_row_value(rows, "timezone")
+    return _single_row_value(rows, ("currency_code", "currency")), _single_row_value(
+        rows,
+        ("timezone", "display_timezone"),
+    )
 
 
-def _single_row_value(rows: list[JsonObject], field_name: str) -> object | None:
+def _single_row_value(rows: list[JsonObject], field_names: tuple[str, ...]) -> object | None:
     values: list[object] = []
     for row in rows:
-        value = _field_value(row, field_name)
+        value = _field_value(row, *field_names)
         if value is not None and value not in values:
             values.append(value)
     return values[0] if len(values) == 1 else None
@@ -496,6 +598,7 @@ async def _load_app_credentials(
 
 
 __all__ = [
+    "ADVERTISER_INFO_PATH",
     "marketing_download_async_report",
     "marketing_poll_async_report",
     "marketing_run_async_report",

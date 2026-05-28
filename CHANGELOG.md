@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.4 (2026-05-28)
+
+### Bug Fixes
+
+- Marketing sync reports now enrich rows with advertiser currency/timezone
+  metadata when TikTok omits those fields from `/report/integrated/get/`
+  responses, and accept TikTok's `currency` key as `currency_code`.
+- `get_publish_status` is now advertised and enforced as read-only, matching
+  the alias-aware `posting_get_post_status` safety behavior.
+
 ## 0.2.3 (2026-05-28)
 
 ### Bug Fixes
