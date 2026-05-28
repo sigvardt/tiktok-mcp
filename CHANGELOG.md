@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0](https://github.com/sigvardt/tiktok-mcp/compare/v0.1.1...v0.2.0) (2026-05-28)
+
+
+### Features
+
+* **auth:** add loopback OAuth polling ([88deac2](https://github.com/sigvardt/tiktok-mcp/commit/88deac20805975660efcf70b7bfdbb28eb044fd7))
+
+
+### Bug Fixes
+
+* **auth:** accept marketing token expiry omission ([44a701b](https://github.com/sigvardt/tiktok-mcp/commit/44a701be643f5e9d73b6dad8bc3adc40979cc2d3))
+* **auth:** route Business OAuth via API host ([92dcd06](https://github.com/sigvardt/tiktok-mcp/commit/92dcd06e2bd7717e9081c7047756be9eabd534c6))
+* **auth:** support marketing app tokens ([023c0a7](https://github.com/sigvardt/tiktok-mcp/commit/023c0a7ac733f8e2035db25706e9803cd1377e88))
+* repair report metadata and status safety ([2402f8b](https://github.com/sigvardt/tiktok-mcp/commit/2402f8b28ed75c03466cb5c7927caea4e9b3bf0e))
+
+
+### Infrastructure
+
+* **release:** refresh PyPI smoke install ([a77e5df](https://github.com/sigvardt/tiktok-mcp/commit/a77e5df08753a73d37f623a747544ce7611de3db))
+* **smoke:** avoid empty bash arrays in release smoke ([bd22f59](https://github.com/sigvardt/tiktok-mcp/commit/bd22f59fb9bb85ea1817cc606034e169d0faf356))
+
+
+### Documentation
+
+* **readme:** avoid endpoint link checks ([16cbe04](https://github.com/sigvardt/tiktok-mcp/commit/16cbe04a78e59a5dc6c98b87a0050aaab768372f))
+
 ## 0.2.4 (2026-05-28)
 
 ### Bug Fixes
